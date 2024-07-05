@@ -1,0 +1,20 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: "github.com/levelfourab/windshift-go/internal/proto"
+  disable:
+    - module: buf.build/googleapis/googleapis
+      file_option: go_package_prefix
+plugins:
+  # renovate: datasource=github-releases depName=protocolbuffers/protobuf-go
+  - remote: buf.build/protocolbuffers/go:v1.34.2
+    out: internal/proto
+    opt:
+      - paths=source_relative
+  # renovate: datasource=github-releases depName=planetscale/vtprotobuf
+  - remote: buf.build/community/planetscale-vtprotobuf:v0.6.0
+    out: internal/proto
+    opt:
+      - paths=source_relative,features=marshal+unmarshal+size+pool+grpc

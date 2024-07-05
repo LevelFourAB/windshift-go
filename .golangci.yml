@@ -1,0 +1,63 @@
+issues:
+  exclude-rules:
+    - path: (.+)_test.go
+      linters:
+        - dupl
+    - linters:
+        - revive
+        - stylecheck
+      text: dot imports
+      source: gomega
+    - linters:
+        - revive
+        - stylecheck
+      text: dot imports
+      source: ginkgo
+    - linters:
+        - revive
+      text: 'unused-parameter:'
+
+linters-settings:
+  gosec:
+    excludes:
+      - G601
+  misspell:
+    locale: US
+
+linters:
+  disable-all: true
+  enable:
+  - bodyclose
+  - contextcheck
+  - dogsled
+  - dupl
+  - errcheck
+  - errname
+  - exportloopref
+  - exhaustive
+  - goconst
+  - gocyclo
+  - gofumpt
+  - goimports
+  - goprintffuncname
+  - gosec
+  - gosimple
+  - govet
+  - ineffassign
+  - misspell
+  - nakedret
+  - makezero
+  - nilerr
+  - nilnil
+  - noctx
+  - nolintlint
+  - prealloc
+  - predeclared
+  - revive
+  - spancheck
+  - staticcheck
+  - typecheck
+  - unconvert
+  - unparam
+  - unused
+  - whitespace
