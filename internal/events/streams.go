@@ -100,13 +100,13 @@ func handleStreamSource(opts streams.Options, req *eventsv1alpha1.EnsureStreamRe
 	}
 
 	switch source := opts.Source.(type) {
-	case streams.DataSourceSubjects:
+	case *streams.DataSourceSubjects:
 		req.Source = &eventsv1alpha1.EnsureStreamRequest_Subjects_{
 			Subjects: &eventsv1alpha1.EnsureStreamRequest_Subjects{
 				Subjects: source.Subjects,
 			},
 		}
-	case streams.DataSourceMirror:
+	case *streams.DataSourceMirror:
 		streamSource, err := toProtobufStreamSource(source.Source)
 		if err != nil {
 			return fmt.Errorf("source of mirror invalid: %s", err)
@@ -115,7 +115,7 @@ func handleStreamSource(opts streams.Options, req *eventsv1alpha1.EnsureStreamRe
 		req.Source = &eventsv1alpha1.EnsureStreamRequest_Mirror{
 			Mirror: streamSource,
 		}
-	case streams.DataSourceAggregate:
+	case *streams.DataSourceAggregate:
 		sources := make([]*eventsv1alpha1.EnsureStreamRequest_StreamSource, len(source.Sources))
 		for i, s := range source.Sources {
 			streamSource, err := toProtobufStreamSource(s)
