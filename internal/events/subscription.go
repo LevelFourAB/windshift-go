@@ -28,8 +28,8 @@ type subscription struct {
 
 	events chan events.Event
 
-	ackNacks *rpc.Exchange[eventsv1alpha1.EventsRequest, struct{}]
-	pings    *rpc.Exchange[eventsv1alpha1.EventsRequest, struct{}]
+	ackNacks *rpc.Exchange[*eventsv1alpha1.EventsRequest, struct{}]
+	pings    *rpc.Exchange[*eventsv1alpha1.EventsRequest, struct{}]
 }
 
 func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...subscribe.Option) (<-chan events.Event, error) {
@@ -78,8 +78,8 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		res := &subscription{
 			client:   s,
 			events:   make(chan events.Event),
-			ackNacks: rpc.NewExchange[eventsv1alpha1.EventsRequest, struct{}](),
-			pings:    rpc.NewExchange[eventsv1alpha1.EventsRequest, struct{}](),
+			ackNacks: rpc.NewExchange[*eventsv1alpha1.EventsRequest, struct{}](),
+			pings:    rpc.NewExchange[*eventsv1alpha1.EventsRequest, struct{}](),
 		}
 
 		// The receive and send loop use the context of the events call.
@@ -103,12 +103,12 @@ func (s *subscription) sendLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-s.ackNacks.Requests():
-			err := s.client.Send(&req.Request)
+			err := s.client.Send(req.Request)
 			if err != nil {
 				s.ackNacks.Fail(req.ID, err)
 			}
 		case req := <-s.pings.Requests():
-			err := s.client.Send(&req.Request)
+			err := s.client.Send(req.Request)
 			if err != nil {
 				s.pings.Fail(req.ID, err)
 			}
@@ -233,7 +233,7 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 	}
 
 	return backoff.Retry(func() error {
-		req := rpc.NewPendingRequest[eventsv1alpha1.EventsRequest, struct{}](e.ID(), eventsv1alpha1.EventsRequest{
+		req := rpc.NewPendingRequest[*eventsv1alpha1.EventsRequest, struct{}](e.ID(), &eventsv1alpha1.EventsRequest{
 			Request: &eventsv1alpha1.EventsRequest_Ack_{
 				Ack: &eventsv1alpha1.EventsRequest_Ack{
 					Ids: []uint64{e.ID()},
@@ -279,7 +279,7 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 	}
 
 	return backoff.Retry(func() error {
-		req := rpc.NewPendingRequest[eventsv1alpha1.EventsRequest, struct{}](e.ID(), eventsv1alpha1.EventsRequest{
+		req := rpc.NewPendingRequest[*eventsv1alpha1.EventsRequest, struct{}](e.ID(), &eventsv1alpha1.EventsRequest{
 			Request: &eventsv1alpha1.EventsRequest_Reject_{
 				Reject: &eventsv1alpha1.EventsRequest_Reject{
 					Ids:         []uint64{e.ID()},
@@ -307,7 +307,7 @@ func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
 	}
 
 	return backoff.Retry(func() error {
-		req := rpc.NewPendingRequest[eventsv1alpha1.EventsRequest, struct{}](e.ID(), eventsv1alpha1.EventsRequest{
+		req := rpc.NewPendingRequest[*eventsv1alpha1.EventsRequest, struct{}](e.ID(), &eventsv1alpha1.EventsRequest{
 			Request: &eventsv1alpha1.EventsRequest_Ping_{
 				Ping: &eventsv1alpha1.EventsRequest_Ping{
 					Ids: []uint64{e.ID()},
