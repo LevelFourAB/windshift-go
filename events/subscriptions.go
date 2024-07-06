@@ -102,9 +102,9 @@ type AckOptions struct {
 	Backoff backoff.BackOff
 }
 
-func (o AckOptions) Apply(opts []AckOption) {
+func (o *AckOptions) Apply(opts []AckOption) {
 	for _, opt := range opts {
-		opt.applyToAck(&o)
+		opt.applyToAck(o)
 	}
 }
 
@@ -119,9 +119,9 @@ type RejectOptions struct {
 	Backoff           backoff.BackOff
 }
 
-func (o RejectOptions) Apply(opts []RejectOption) {
+func (o *RejectOptions) Apply(opts []RejectOption) {
 	for _, opt := range opts {
-		opt.applyToReject(&o)
+		opt.applyToReject(o)
 	}
 }
 
@@ -179,9 +179,9 @@ type PingOptions struct {
 	Backoff backoff.BackOff
 }
 
-func (o PingOptions) Apply(opts []PingOption) {
+func (o *PingOptions) Apply(opts []PingOption) {
 	for _, opt := range opts {
-		opt.applyToPing(&o)
+		opt.applyToPing(o)
 	}
 }
 
