@@ -254,7 +254,7 @@ func (DataSourceAggregate) isStreamDataSource() {}
 //     `time.us.east` and `time.us.east.atlanta` but not `time.eu.east`.
 //
 // See NATS concepts: https://docs.nats.io/nats-concepts/subjects
-func WithSubjects(subjects []string) Option {
+func WithSubjects(subjects ...string) Option {
 	return func(o *Options) error {
 		if o.Source != nil {
 			return errors.New("source is already set")
