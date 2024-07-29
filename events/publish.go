@@ -40,7 +40,11 @@ type OutgoingEvent struct {
 // PublishedEvent contains information about an event that has been published
 // to a stream.
 type PublishedEvent interface {
-	// Id of the event, this is the id that the stream assigned to the event.
+	// ID of the event, this is the id that the stream assigned to the event.
+	// This will also be the [Event.ID] when the event is consumed.
+	//
+	// See [OutgoingEvent.ExpectedLastID] to use this for optimistic concurrency
+	// control.
 	ID() uint64
 }
 

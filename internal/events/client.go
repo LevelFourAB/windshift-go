@@ -1,18 +1,32 @@
 package events
 
 import (
+	"log/slog"
+
 	"github.com/levelfourab/windshift-go/events"
-	eventsv1alpha1 "github.com/levelfourab/windshift-go/internal/proto/windshift/events/v1alpha1"
-	"google.golang.org/grpc"
+	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Client struct {
-	service eventsv1alpha1.EventsServiceClient
+	js     jetstream.JetStream
+	logger *slog.Logger
+	tracer trace.Tracer
+	// w3cPropagator is the W3C propagator used to propagate tracing information
+	// into published and consumed events.
+	w3cPropagator propagation.TextMapPropagator
 }
 
-func New(conn *grpc.ClientConn) *Client {
+func New(js jetstream.JetStream, logger *slog.Logger) *Client {
+	tracer := otel.Tracer("windshift-go/events")
+
 	return &Client{
-		service: eventsv1alpha1.NewEventsServiceClient(conn),
+		logger:        logger,
+		tracer:        tracer,
+		js:            js,
+		w3cPropagator: propagation.TraceContext{},
 	}
 }
 

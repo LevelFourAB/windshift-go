@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"errors"
 
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
@@ -15,7 +14,7 @@ type Client interface {
 	//
 	// Streams are collections of events that can later be consumed, they can
 	// source events from subjects and other streams.
-	EnsureStream(ctx context.Context, name string, opts ...streams.Option) error
+	EnsureStream(ctx context.Context, name string, opts ...streams.Option) (streams.Stream, error)
 
 	// Publish an event to a stream.
 	Publish(ctx context.Context, event *OutgoingEvent) (PublishedEvent, error)
@@ -52,30 +51,4 @@ type Client interface {
 	// To control the number of events that can be processed concurrently, use
 	// [subscribe.MaxProcessingEvents].
 	Subscribe(ctx context.Context, stream string, consumer string, opts ...subscribe.Option) (<-chan Event, error)
-}
-
-var (
-	ErrStreamRequired   = errors.New("stream is required")
-	ErrSubjectRequired  = errors.New("subject is required")
-	ErrSubjectsRequired = errors.New("subjects are required")
-	ErrDataRequired     = errors.New("data is required")
-	ErrConsumerRequired = errors.New("consumer is required")
-)
-
-// DataInvalidError represents an error where the data is invalid.
-type DataInvalidError struct {
-	Err error
-}
-
-func (e *DataInvalidError) Error() string {
-	return "data is invalid: " + e.Err.Error()
-}
-
-func (e *DataInvalidError) Unwrap() error {
-	return e.Err
-}
-
-func (e *DataInvalidError) Is(target error) bool {
-	_, ok := target.(*DataInvalidError)
-	return ok
 }

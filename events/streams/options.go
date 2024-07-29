@@ -39,7 +39,7 @@ type RetentionPolicy struct {
 	MaxBytes uint
 
 	// DiscardPolicy defines the behavior when a limit on events is reached.
-	DiscardPolicy *DiscardPolicy
+	DiscardPolicy DiscardPolicy
 	// DiscardNewPerSubject defines whether to discard new events per subject
 	// if the discard policy is set to [DiscardPolicyNew].
 	DiscardNewPerSubject bool
@@ -51,6 +51,9 @@ type RetentionPolicy struct {
 type DiscardPolicy string
 
 const (
+	// DiscardPolicyDefault is the default discard policy, which is equivalent
+	// to [DiscardPolicyOld].
+	DiscardPolicyDefault DiscardPolicy = ""
 	// DiscardPolicyOld discards old events when a limit is reached.
 	DiscardPolicyOld DiscardPolicy = "old"
 	// DiscardPolicyNew discards new events when a limit is reached.
@@ -101,7 +104,7 @@ func WithMaxBytes(maxBytes uint) Option {
 // control whether to discard new events per subject.
 func WithDiscardPolicy(discardPolicy DiscardPolicy) Option {
 	return func(o *Options) error {
-		o.RetentionPolicy.DiscardPolicy = &discardPolicy
+		o.RetentionPolicy.DiscardPolicy = discardPolicy
 		return nil
 	}
 }
@@ -200,14 +203,6 @@ type DataSourceSubjects struct {
 
 func (DataSourceSubjects) isStreamDataSource() {}
 
-// DataSourceMirror is used to indicate that a stream is a mirror of another
-// stream.
-type DataSourceMirror struct {
-	Source *StreamSource
-}
-
-func (DataSourceMirror) isStreamDataSource() {}
-
 // DataSourceAggregate is used to indicate that a stream is an aggregate of
 // multiple streams.
 type DataSourceAggregate struct {
@@ -271,27 +266,6 @@ func WithSubjects(subjects ...string) Option {
 	}
 }
 
-// MirrorStream is used to indicate that a stream is a mirror of another
-// stream.
-//
-// This option is mutually exclusive with [WithSubjects] and [AggregateStreams].
-func MirrorStream(source *StreamSource) Option {
-	return func(o *Options) error {
-		if o.Source != nil {
-			return errors.New("source is already set")
-		}
-
-		if err := validateStreamSource(source); err != nil {
-			return err
-		}
-
-		o.Source = &DataSourceMirror{
-			Source: source,
-		}
-		return nil
-	}
-}
-
 // AggregateStreams is used to indicate that a stream is an aggregate of
 // multiple streams. At least one stream source is required.
 //
@@ -317,9 +291,9 @@ func AggregateStreams(sources ...*StreamSource) Option {
 
 // Storage is used to define how to store a stream.
 type Storage struct {
-	// Type indicates where the stream should be stored. If nil, the default
-	// [StorageTypeFile] will be used.
-	Type *StorageType
+	// Type indicates where the stream should be stored. Defaults to
+	// [StorageTypeFile] if not set.
+	Type StorageType
 	// Replicas indicates how many replicas of the stream should be stored. If
 	// zero, the default value of 1 will be used.
 	Replicas uint
@@ -329,6 +303,9 @@ type Storage struct {
 type StorageType string
 
 const (
+	// StorageTypeDefault is the default storage type, which is equivalent to
+	// [StorageTypeFile].
+	StorageTypeDefault StorageType = ""
 	// StorageTypeFile indicates that the stream should be stored in a file.
 	// This is the default.
 	StorageTypeFile StorageType = "file"
@@ -340,7 +317,7 @@ const (
 // set, the default [StorageTypeFile] will be used.
 func WithStorageType(storageType StorageType) Option {
 	return func(o *Options) error {
-		o.Storage.Type = &storageType
+		o.Storage.Type = storageType
 		return nil
 	}
 }

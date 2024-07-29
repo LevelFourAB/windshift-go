@@ -14,44 +14,42 @@ import (
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/levelfourab/windshift-go/events/subscribe"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	testv1 "github.com/levelfourab/windshift-go/internal/proto/windshift/test/v1"
+	"github.com/nats-io/nats.go"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func main() {
 	// Get a flag to determine if individual events should be printed
 	printEvents := flag.Bool("print-events", false, "Print individual events")
 	workLoadTime := flag.Int("work-load-time", 100, "Time to fake processing an event in milliseconds")
-	parallelism := flag.Int("parallelism", 1, "Number of parallel consumers")
+	parallelism := flag.Uint("parallelism", 1, "Number of parallel consumers")
 	flag.Parse()
 
-	client, err := windshift.NewClient("localhost:8080", windshift.WithGRPCOptions(
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	))
+	natsClient, err := nats.Connect("localhost:4222")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
+	defer natsClient.Close()
+
+	eventsClient, err := windshift.NewEvents(natsClient)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Kill, os.Interrupt)
 	defer cancel()
-
-	eventsClient := client.Events()
 
 	// Create a consumer on the existing stream `test`
 	consumer, err := eventsClient.EnsureConsumer(
 		ctx,
 		"test",
-		consumers.WithSubjects("test"),
 		consumers.WithConsumeFrom(streams.AtStreamStart()),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.ID(), subscribe.MaxProcessingEvents(*parallelism))
+	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), subscribe.MaxProcessingEvents(*parallelism))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -69,8 +67,8 @@ func main() {
 		}
 	}()
 
-	workQueue := make(chan events.Event, 1000)
-	for i := 0; i < *parallelism; i++ {
+	workQueue := make(chan events.Event, *parallelism*5)
+	for i := uint(0); i < *parallelism; i++ {
 		go func() {
 			for {
 				event := <-workQueue
@@ -84,9 +82,9 @@ func main() {
 				}
 
 				switch d := data.(type) {
-				case *testv1.StringValue:
+				case *structpb.Value:
 					if *printEvents {
-						log.Println("Received event", "id=", event.ID(), "time=", event.Headers().OccurredAt(), "value=", d.Value)
+						log.Println("Received event", "id=", event.ID(), "time=", event.Headers().OccurredAt(), "value=", d.GetStringValue())
 					}
 				}
 

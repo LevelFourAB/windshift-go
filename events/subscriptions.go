@@ -34,7 +34,11 @@ type Event interface {
 	// Subject contains the subject the event was published to.
 	Subject() string
 
-	// Headers contain information about the event, such as when it was
+	// DeliveryAttempt returns the number of times the event has been
+	// delivered. The first delivery attempt will return 1.
+	DeliveryAttempt() uint
+
+	// Headers contain static information about the event, such as when it was
 	// published.
 	Headers() Headers
 
@@ -46,10 +50,7 @@ type Event interface {
 	//
 	//   import "path/to/your/proto/messages"
 	//
-	//   var data messages.YourMessageType
-	//   if err := event.UnmarshalNew(&data); err != nil {
-	//     return err
-	//   }
+	//   data, err := event.UnmarshalNew()
 	//
 	// Use [Event.UnmarshalTo] if you want to unmarshal into an existing instance.
 	UnmarshalNew() (proto.Message, error)
@@ -57,7 +58,16 @@ type Event interface {
 	// UnmarshalTo unmarshals the data of the event into the provided
 	// instance. The instance must be a pointer to the correct type.
 	//
-	// Use [UnmarshalNew] if you want to unmarshal into a new instance.
+	// Example:
+	//
+	//   import "path/to/your/proto/messages"
+	//
+	//   var data messages.YourMessageType
+	//   if err := event.UnmarshalNew(&data); err != nil {
+	//     return err
+	//   }
+	//
+	// Use [Event.UnmarshalNew] if you want to unmarshal into a new instance.
 	UnmarshalTo(v proto.Message) error
 
 	// Ack acknowledges the event, indicating that it was processed
@@ -92,10 +102,6 @@ type Headers interface {
 	// IDempotencyKey returns the idempotency key of the event. Will be an
 	// empty string if the event was not published with an idempotency key.
 	IdempotencyKey() string
-
-	// DeliveryAttempt returns the number of times the event has been
-	// delivered. The first delivery attempt will return 1.
-	DeliveryAttempt() int
 }
 
 type AckOptions struct {

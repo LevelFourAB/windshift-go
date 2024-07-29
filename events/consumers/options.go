@@ -14,12 +14,15 @@ type Options struct {
 	Name string
 	// Subjects is a list of subjects to consume events from.
 	Subjects []string
-	// Pointer is the pointer to start consuming events from.
-	Pointer streams.Pointer
+	// From is the pointer to start consuming events from.
+	From streams.Pointer
 	// ProcessingTimeout is the timeout for processing an event. If the timeout
 	// is exceeded the event will be redelivered. Leave empty to use the
 	// servers default timeout.
 	ProcessingTimeout time.Duration
+	// MaxDeliveryAttempts is the maximum number of times an event will be
+	// delivered before it is considered failed.
+	MaxDeliveryAttempts uint
 }
 
 // Option is an option for creating or updating a consumer.
@@ -92,7 +95,7 @@ func WithSubjects(subjects ...string) Option {
 //	WithConsumeFrom(streams.AtStreamTimestamp(time.Now()))
 func WithConsumeFrom(pointer streams.Pointer) Option {
 	return func(o *Options) error {
-		o.Pointer = pointer
+		o.From = pointer
 		return nil
 	}
 }
@@ -103,6 +106,15 @@ func WithConsumeFrom(pointer streams.Pointer) Option {
 func WithProcessingTimeout(timeout time.Duration) Option {
 	return func(o *Options) error {
 		o.ProcessingTimeout = timeout
+		return nil
+	}
+}
+
+// WithMaxDeliveryAttempts sets the maximum number of times an event will be
+// delivered before it is considered failed.
+func WithMaxDeliveryAttempts(attempts uint) Option {
+	return func(o *Options) error {
+		o.MaxDeliveryAttempts = attempts
 		return nil
 	}
 }
