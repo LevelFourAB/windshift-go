@@ -7,9 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/levelfourab/windshift-go/delays"
 	"github.com/levelfourab/windshift-go/events"
 	"github.com/levelfourab/windshift-go/events/subscribe"
+	"github.com/levelfourab/windshift-go/internal/backoff"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -18,10 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-var (
-	errInvalidID        = backoff.Permanent(errors.New("invalid id"))
-	errTemporaryFailure = errors.New("temporary failure")
-)
+var defaultEventBackoff = delays.StopAfterMaxTime(delays.Exponential(10*time.Millisecond, 2), 5*time.Second)
 
 type subscription struct {
 	client *Client
@@ -242,10 +240,10 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff()
+		options.Backoff = defaultEventBackoff
 	}
 
-	return backoff.Retry(func() error {
+	return backoff.Run(ctx, func() error {
 		err := e.msg.Ack()
 		if errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
 			e.span.RecordError(err)
@@ -265,7 +263,7 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff()
+		options.Backoff = defaultEventBackoff
 	}
 
 	var permanently bool
@@ -284,7 +282,7 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 		delay = options.Delay
 	}
 
-	return backoff.Retry(func() error {
+	return backoff.Run(ctx, func() error {
 		var err error
 		if permanently {
 			err = e.msg.Term()
@@ -309,10 +307,10 @@ func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff()
+		options.Backoff = defaultEventBackoff
 	}
 
-	return backoff.Retry(func() error {
+	return backoff.Run(ctx, func() error {
 		err := e.msg.InProgress()
 		if err != nil {
 			e.span.RecordError(err)
@@ -325,13 +323,6 @@ func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
 }
 
 var _ events.Event = (*Event)(nil)
-
-func defaultEventBackoff() backoff.BackOff {
-	return backoff.NewExponentialBackOff(
-		backoff.WithInitialInterval(10*time.Millisecond),
-		backoff.WithRetryStopDuration(1*time.Second),
-	)
-}
 
 type headers struct {
 	occurredAt     time.Time

@@ -3,7 +3,6 @@ module github.com/levelfourab/windshift-go
 go 1.22
 
 require (
-	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/nats-io/nats-server/v2 v2.10.18
 	github.com/nats-io/nats.go v1.36.0
 	github.com/onsi/ginkgo/v2 v2.19.0

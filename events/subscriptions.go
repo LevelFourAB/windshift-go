@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/levelfourab/windshift-go/delays"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -105,7 +105,7 @@ type Headers interface {
 }
 
 type AckOptions struct {
-	Backoff backoff.BackOff
+	Backoff delays.DelayDecider
 }
 
 func (o *AckOptions) Apply(opts []AckOption) {
@@ -119,10 +119,11 @@ type AckOption interface {
 }
 
 type RejectOptions struct {
-	Delay             time.Duration
+	Backoff delays.DelayDecider
+
 	RejectPermanently bool
+	Delay             time.Duration
 	RedeliveryDecider func(Event) time.Duration
-	Backoff           backoff.BackOff
 }
 
 func (o *RejectOptions) Apply(opts []RejectOption) {
@@ -152,10 +153,10 @@ func (o rejectPermanently) applyToReject(opts *RejectOptions) {
 
 type redeliverDelay time.Duration
 
-// WithRedeliverDelay indicates that the event should be redelivered after
+// WithRedeliveryDelay indicates that the event should be redelivered after
 // the specified delay. This can be used to control how long to wait in case
 // of a temporary error.
-func WithRedeliverDelay(delay time.Duration) RejectOption {
+func WithRedeliveryDelay(delay time.Duration) RejectOption {
 	return redeliverDelay(delay)
 }
 
@@ -182,7 +183,7 @@ func (o redeliveryDecider) applyToReject(opts *RejectOptions) {
 }
 
 type PingOptions struct {
-	Backoff backoff.BackOff
+	Backoff delays.DelayDecider
 }
 
 func (o *PingOptions) Apply(opts []PingOption) {
@@ -201,43 +202,35 @@ type CallOption interface {
 	PingOption
 }
 
-type backoffOption struct {
-	backoff backoff.BackOff
-}
+type backoffOption delays.DelayDecider
 
 func (b backoffOption) applyToAck(o *AckOptions) {
-	o.Backoff = b.backoff
+	o.Backoff = delays.DelayDecider(b)
 }
 
 func (b backoffOption) applyToReject(o *RejectOptions) {
-	o.Backoff = b.backoff
+	o.Backoff = delays.DelayDecider(b)
 }
 
 func (b backoffOption) applyToPing(o *PingOptions) {
-	o.Backoff = b.backoff
+	o.Backoff = delays.DelayDecider(b)
 }
 
-// WithExponentialBackoff sets the backoff strategy to use when retrying an
-// operation.
+// WithBackoff sets the backoff strategy to use when retrying an operation.
 //
 // The default retry strategy for acknowledging, rejecting and pinging events
-// is to retry after 10 milliseconds, with a maximum interval of 1 second.
+// is to retry after 10 milliseconds, with a maximum total time of 5 seconds.
 //
 // Example:
 //
-//	event.Ack(ctx, events.WithExponentialBackoff(
-//	  backoff.WithInitialInterval(10*time.Millisecond),
-//	  backoff.WithMaxInterval(1*time.Second),
+//	event.Ack(ctx, events.WithBackoff(
+//	  delays.StopAfterMaxTime(delays.Exponential(10*time.Millisecond, 2), 10*time.Second),
 //	))
-func WithExponentialBackoff(opts ...backoff.ExponentialBackOffOpts) CallOption {
-	return backoffOption{
-		backoff: backoff.NewExponentialBackOff(opts...),
-	}
+func WithBackoff(decider delays.DelayDecider) CallOption {
+	return backoffOption(decider)
 }
 
 // WithNoRetry disables retrying an operation.
 func WithNoRetry() CallOption {
-	return backoffOption{
-		backoff: &backoff.StopBackOff{},
-	}
+	return backoffOption(delays.Never())
 }

@@ -505,7 +505,7 @@ var _ = Describe("Event Consumption", func() {
 			Expect(event.DeliveryAttempt()).To(BeNumerically("==", 1))
 
 			start := time.Now()
-			err = event.Reject(ctx, events.WithRedeliverDelay(100*time.Millisecond))
+			err = event.Reject(ctx, events.WithRedeliveryDelay(100*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
 			// Receive the event again
