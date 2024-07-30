@@ -104,9 +104,9 @@ Features:
 
 ## Defining a consumer
 
-Consumers in Windshift are used to subscribe to events. Consumers can can be
-ephemeral or durable. Ephemeral consumers are automatically removed after
-they have been inactive for a certain amount of time.
+Consumers in Windshift are used to subscribe to events in streams. Consumers
+can be ephemeral or durable. Ephemeral consumers are automatically removed
+after they have been inactive for a certain amount of time.
 
 To create a durable consumer give it a name:
 
@@ -129,53 +129,74 @@ Consumers can be configured with options. Options include:
 
 ## Subscribing to events
 
+Events can be consumed by subscribing to a consumer. For durable consumers
+multiple subscriptions may be made, and events will be distributed between
+the subscriptions.
+
+Example:
+
 ```go
 events, err := eventsClient.Subscribe(ctx, "orders", "idOfConsumer")
 
 for event := range events {
-  // Process event
+  // Context includes tracing data from the publishing of the event
+  ctx := event.Context()
+
+  // Unmarshal the event data to process it
   data, err := event.UnmarshalNew()
   
-  // Acknowledge that event was processed
-  err := event.Ack()
+  // Acknowledge that event was processed (or reject it)
+  err := event.Ack(ctx)
   if err != nil {
     // Handle error
   }
 }
 ```
 
-The library does not handle reconnection and retries, so often you may want
-to subscribe to events in a loop:
+Subscriptions stay active as long as the context remains uncanceled and will
+reconnect to NATS if the connection is lost.
+
+### Acknowledging and rejecting events
+
+Events need to be acknowledge or rejected to indicate if we have successfully
+handled them or not. If an event is not acknowledged or rejected within the
+processing timeout for the consumer it will be redelivered.
+
+To acknowledge an event call `Ack`:
 
 ```go
-for {
-  events, err := eventsClient.Subscribe(ctx, "orders", "idOfConsumer")
-  if err != nil {
-    // Optionally sleep according to a backoff strategy
-    time.Sleep(1 * time.Second)
-    
-    if ctx.Err() != nil {
-      // The context is done, we should not try to reconnect
-      break
-    }
+err := event.Ack(ctx)
+```
 
-    continue
-  }
+To reject an event call `Reject`:
 
-  for event := range events {
-    // Process event directly or pass event to a worker pool. Make sure to
-    // Acknowledge or Reject the event. For long running tasks, make sure to
-    // Ping the event so it does not get requeued.
-  }
+```go
+// Reject and requeue the event for immediate redelivery
+err := event.Reject(ctx)
 
-  // At this point the subscription was closed, either due to the context being
-  // canceled, or the connection to the server was lost.
-  if ctx.Err() != nil {
-    // Late check to avoid a sleep after the context is done
-    break
-  }
+// Reject and requeue the event for redelivery after a delay
+err := event.Reject(ctx, events.WithRedeliveryDelay(5 * time.Minute))
 
-  // Sleep for a bit before trying to reconnect
-  time.Sleep(100 * time.Millisecond)
-}
+// Reject permanently
+err := event.Reject(ctx, events.Permanently())
+
+// Reject with customizable delay
+err := event.Reject(ctx, events.WithRedeliveryDecider(func(event events.Event) time.Duration {
+  return ... // Calculate delay based on delivery attempt, headers, data etc
+}))
+```
+
+To extend the time available for processing an event, the event can be pinged.
+
+```go
+err := event.Ping(ctx)
+```
+
+It also possible to control how the library attempts to retry acking or rejecting
+an event by using either `events.WithNoRetry` or `events.WithBackoff`:
+
+```go
+err := event.Ack(ctx, events.WithBackoff(
+  delays.StopAfterMaxTime(delays.Exponential(10*time.Millisecond, 2), 5*time.Second),
+))
 ```
