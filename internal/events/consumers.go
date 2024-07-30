@@ -105,9 +105,7 @@ func (c *Client) ensureConsumer(ctx context.Context, stream string, resolvedOpts
 // are automatically deleted when they have not been used for a period of time,
 // and are useful for one-off consumers.
 func (c *Client) declareEphemeralConsumer(ctx context.Context, stream string, options *consumers.Options) (string, error) {
-	consumerConfig := &jetstream.ConsumerConfig{
-		InactiveThreshold: 1 * time.Hour,
-	}
+	consumerConfig := &jetstream.ConsumerConfig{}
 
 	c.logger.Info(
 		"Creating ephemeral consumer",
@@ -139,8 +137,7 @@ func (c *Client) declareDurableConsumer(ctx context.Context, stream string, opti
 
 			// Consumer does not exist, create it
 			consumerConfig := &jetstream.ConsumerConfig{
-				Durable:           options.Name,
-				InactiveThreshold: 30 * 24 * time.Hour,
+				Durable: options.Name,
 			}
 
 			c.setConsumerSettings(consumerConfig, options, false)
@@ -213,6 +210,11 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 				config.DeliverPolicy = jetstream.DeliverLastPolicy
 			}
 		}
+	}
+
+	config.InactiveThreshold = options.InactiveThreshold
+	if config.Durable == "" && config.InactiveThreshold == 0 {
+		config.InactiveThreshold = 1 * time.Hour
 	}
 }
 

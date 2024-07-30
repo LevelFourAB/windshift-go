@@ -23,6 +23,9 @@ type Options struct {
 	// MaxDeliveryAttempts is the maximum number of times an event will be
 	// delivered before it is considered failed.
 	MaxDeliveryAttempts uint
+	// InactiveThreshold is the maximum time the consumer can be inactive
+	// before it is automatically removed.
+	InactiveThreshold time.Duration
 }
 
 // Option is an option for creating or updating a consumer.
