@@ -1,7 +1,13 @@
 package subscribe
 
+import "github.com/levelfourab/windshift-go/delays"
+
 type Options struct {
-	MaxProcessingEvents uint
+	MaxPendingEvents uint
+
+	// CallRetryBackoff is the backoff strategy to use when acking, rejecting
+	// or pinging an event fails.
+	CallRetryBackoff delays.DelayDecider
 }
 
 func ApplyOptions(opts []Option) Options {
@@ -14,11 +20,20 @@ func ApplyOptions(opts []Option) Options {
 
 type Option func(*Options)
 
-// MaxProcessingEvents is the maximum number of events to process concurrently.
+// MaxPendingEvents is the maximum number of events to keep ready for
+// processing.
 //
 // If not set this defaults to 50.
-func MaxProcessingEvents(n uint) Option {
+func MaxPendingEvents(n uint) Option {
 	return func(o *Options) {
-		o.MaxProcessingEvents = n
+		o.MaxPendingEvents = n
+	}
+}
+
+// WithDefaultRetryBackoff sets the default backoff strategy to use when
+// acking, rejecting or pinging an event fails.
+func WithDefaultRetryBackoff(decider delays.DelayDecider) Option {
+	return func(o *Options) {
+		o.CallRetryBackoff = decider
 	}
 }

@@ -29,6 +29,10 @@ type subscription struct {
 	// channel is the channel used to send events to the caller.
 	events chan events.Event
 
+	// callRetryBackoff is the default backoff strategy to use when acking,
+	// rejecting or pinging an event fails.
+	callRetryBackoff delays.DelayDecider
+
 	// Timeout is the timeout for processing an event. Will be fetched
 	// from the consumer configuration.
 	Timeout time.Duration
@@ -55,19 +59,9 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 
 	options := subscribe.ApplyOptions(opts)
 
-	if options.MaxProcessingEvents == 0 {
-		// Default to 50 events
-		options.MaxProcessingEvents = 50
-	}
-
 	jsConsumer, err := c.js.Consumer(ctx, stream, consumer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get consumer info: %w", err)
-	}
-
-	maxEvents := options.MaxProcessingEvents / 2
-	if maxEvents < 1 {
-		maxEvents = 1
 	}
 
 	logger := c.logger.With(slog.String("stream", stream), slog.String("consumer", consumer))
@@ -76,14 +70,24 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		client: c,
 		logger: logger,
 
-		events: make(chan events.Event),
+		events:           make(chan events.Event),
+		callRetryBackoff: options.CallRetryBackoff,
 
 		Timeout: jsConsumer.CachedInfo().Config.AckWait,
 	}
 
+	if s.callRetryBackoff == nil {
+		s.callRetryBackoff = defaultEventBackoff
+	}
+
+	maxEvents := options.MaxPendingEvents
+	if maxEvents == 0 {
+		maxEvents = 50
+	}
+
 	consumeCtx, err := jsConsumer.Consume(func(msg jetstream.Msg) {
 		s.handleMsg(ctx, msg)
-	}, jetstream.PullExpiry(1*time.Second), jetstream.PullMaxMessages(maxEvents))
+	}, jetstream.PullMaxMessages(maxEvents))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message subscription: %w", err)
 	}
@@ -240,7 +244,7 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff
+		options.Backoff = e.sub.callRetryBackoff
 	}
 
 	return backoff.Run(ctx, func() error {
@@ -263,7 +267,7 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff
+		options.Backoff = e.sub.callRetryBackoff
 	}
 
 	var permanently bool
@@ -307,7 +311,7 @@ func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
 	options.Apply(opts)
 
 	if options.Backoff == nil {
-		options.Backoff = defaultEventBackoff
+		options.Backoff = e.sub.callRetryBackoff
 	}
 
 	return backoff.Run(ctx, func() error {

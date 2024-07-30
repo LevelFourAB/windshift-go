@@ -49,7 +49,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), subscribe.MaxProcessingEvents(*parallelism))
+	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), subscribe.MaxPendingEvents(*parallelism))
 	if err != nil {
 		log.Fatal(err)
 	}
