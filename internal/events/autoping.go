@@ -46,7 +46,6 @@ func (a *AutoPing) run(ctx context.Context) {
 				return
 			}
 
-			a.logger.Debug("Pinging event", slog.Uint64("eventID", event.ID()))
 			err := event.Ping(ctx)
 			if err != nil {
 				a.logger.Warn("Failed to ping event", slog.Uint64("eventID", event.ID()), slog.String("error", err.Error()))

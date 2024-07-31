@@ -269,6 +269,7 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 	}
 
 	return backoff.Run(ctx, func() error {
+		e.sub.logger.Debug("Acknowledging event", slog.Uint64("eventID", e.ID()))
 		err := e.msg.Ack()
 		if errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
 			e.span.RecordError(err)
@@ -314,10 +315,13 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 	return backoff.Run(ctx, func() error {
 		var err error
 		if permanently {
+			e.sub.logger.Debug("Rejecting event", slog.Uint64("eventID", e.ID()), slog.String("type", "permanent"))
 			err = e.msg.Term()
 		} else if delay > 0 {
+			e.sub.logger.Debug("Rejecting event", slog.Uint64("eventID", e.ID()), slog.String("type", "delayed"), slog.Duration("delay", delay))
 			err = e.msg.NakWithDelay(delay)
 		} else {
+			e.sub.logger.Debug("Rejecting event", slog.Uint64("eventID", e.ID()), slog.String("type", "redelivery"))
 			err = e.msg.Nak()
 		}
 
@@ -344,6 +348,7 @@ func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
 	}
 
 	return backoff.Run(ctx, func() error {
+		e.sub.logger.Debug("Pinging event", slog.Uint64("eventID", e.ID()))
 		err := e.msg.InProgress()
 		if err != nil {
 			e.span.RecordError(err)
