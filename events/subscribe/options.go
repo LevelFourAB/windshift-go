@@ -1,6 +1,10 @@
 package subscribe
 
-import "github.com/levelfourab/windshift-go/delays"
+import (
+	"time"
+
+	"github.com/levelfourab/windshift-go/delays"
+)
 
 type Options struct {
 	MaxPendingEvents uint
@@ -8,14 +12,17 @@ type Options struct {
 	// CallRetryBackoff is the backoff strategy to use when acking, rejecting
 	// or pinging an event fails.
 	CallRetryBackoff delays.DelayDecider
+
+	// AutoPingInterval is the interval at which events should be pinged.
+	// Defaults to zero which will determine the ping interval based on the
+	// timeout of the consumer.
+	AutoPingInterval time.Duration
 }
 
-func ApplyOptions(opts []Option) Options {
-	var options Options
-	for _, o := range opts {
-		o(&options)
+func (o *Options) Apply(opts []Option) {
+	for _, opt := range opts {
+		opt(o)
 	}
-	return options
 }
 
 type Option func(*Options)
@@ -35,5 +42,19 @@ func MaxPendingEvents(n uint) Option {
 func WithDefaultRetryBackoff(decider delays.DelayDecider) Option {
 	return func(o *Options) {
 		o.CallRetryBackoff = decider
+	}
+}
+
+// DisableAutoPing disables automatic pinging of events.
+func DisableAutoPing() Option {
+	return func(o *Options) {
+		o.AutoPingInterval = -1
+	}
+}
+
+// WithAutoPingInterval sets the interval at which events should be pinged.
+func WithAutoPingInterval(interval time.Duration) Option {
+	return func(o *Options) {
+		o.AutoPingInterval = interval
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/levelfourab/windshift-go/events"
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
+	"github.com/levelfourab/windshift-go/events/subscribe"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -444,49 +445,6 @@ var _ = Describe("Event Consumption", func() {
 			}
 		})
 
-		It("not processing event redelivers it", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(100*time.Millisecond),
-			)
-			Expect(err).ToNot(HaveOccurred())
-
-			ec, err := manager.Subscribe(ctx, "events", "test")
-			Expect(err).ToNot(HaveOccurred())
-
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			select {
-			case event := <-ec:
-				Expect(event).ToNot(BeNil())
-				Expect(event.DeliveryAttempt()).To(BeNumerically("==", 1))
-			case <-time.After(200 * time.Millisecond):
-				Fail("no event received")
-			}
-
-			time.Sleep(200 * time.Millisecond)
-
-			select {
-			case event := <-ec:
-				Expect(event).ToNot(BeNil())
-				Expect(event.DeliveryAttempt()).To(BeNumerically("==", 2))
-
-				err = event.Ack(ctx)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Check that we have the correct message
-				empty := &emptypb.Empty{}
-				err = event.UnmarshalTo(empty)
-				Expect(err).ToNot(HaveOccurred())
-			case <-time.After(1000 * time.Millisecond):
-				Fail("redelivered event not received")
-			}
-		})
-
 		It("can reject with a delay", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
@@ -588,14 +546,46 @@ var _ = Describe("Event Consumption", func() {
 			}
 		})
 
-		It("can ping events to extend their processing time", func(ctx context.Context) {
+		It("events are automatically pinged", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
 				consumers.WithName("test"),
 				consumers.WithProcessingTimeout(200*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.WithAutoPingInterval(50*time.Millisecond))
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Publish(ctx, &events.OutgoingEvent{
+				Subject: "events.test",
+				Data:    &emptypb.Empty{},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+				time.Sleep(100 * time.Millisecond)
+			case <-time.After(200 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			select {
+			case <-ec:
+				Fail("event received again after ping")
+			case <-time.After(100 * time.Millisecond):
+				// Make sure event isn't delivered for a certain period
+			}
+		})
+
+		It("can manually ping events to extend their processing time", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				consumers.WithName("test"),
+				consumers.WithProcessingTimeout(200*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, &events.OutgoingEvent{
@@ -623,6 +613,49 @@ var _ = Describe("Event Consumption", func() {
 				Fail("event received again after ping")
 			case <-time.After(100 * time.Millisecond):
 				// Make sure event isn't delivered for a certain period
+			}
+		})
+
+		It("not processing event redelivers it when auto-ping is disabled", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				consumers.WithName("test"),
+				consumers.WithProcessingTimeout(100*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Publish(ctx, &events.OutgoingEvent{
+				Subject: "events.test",
+				Data:    &emptypb.Empty{},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+				Expect(event.DeliveryAttempt()).To(BeNumerically("==", 1))
+			case <-time.After(200 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			time.Sleep(200 * time.Millisecond)
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+				Expect(event.DeliveryAttempt()).To(BeNumerically("==", 2))
+
+				err = event.Ack(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Check that we have the correct message
+				empty := &emptypb.Empty{}
+				err = event.UnmarshalTo(empty)
+				Expect(err).ToNot(HaveOccurred())
+			case <-time.After(1000 * time.Millisecond):
+				Fail("redelivered event not received")
 			}
 		})
 	})

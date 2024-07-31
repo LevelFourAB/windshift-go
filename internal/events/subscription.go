@@ -33,9 +33,8 @@ type subscription struct {
 	// rejecting or pinging an event fails.
 	callRetryBackoff delays.DelayDecider
 
-	// Timeout is the timeout for processing an event. Will be fetched
-	// from the consumer configuration.
-	Timeout time.Duration
+	// autoPing provides automatic pinging of events.
+	autoPing *AutoPing
 }
 
 func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...subscribe.Option) (<-chan events.Event, error) {
@@ -57,7 +56,11 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		return nil, events.NewValidationError("invalid consumer name: " + consumer)
 	}
 
-	options := subscribe.ApplyOptions(opts)
+	options := &subscribe.Options{
+		MaxPendingEvents: 50,
+		CallRetryBackoff: defaultEventBackoff,
+	}
+	options.Apply(opts)
 
 	jsConsumer, err := c.js.Consumer(ctx, stream, consumer)
 	if err != nil {
@@ -66,28 +69,20 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 
 	logger := c.logger.With(slog.String("stream", stream), slog.String("consumer", consumer))
 
+	autoPing := createAutoPing(ctx, logger, jsConsumer.CachedInfo().Config.AckWait, options.AutoPingInterval)
+
 	s := &subscription{
 		client: c,
 		logger: logger,
 
 		events:           make(chan events.Event),
 		callRetryBackoff: options.CallRetryBackoff,
-
-		Timeout: jsConsumer.CachedInfo().Config.AckWait,
-	}
-
-	if s.callRetryBackoff == nil {
-		s.callRetryBackoff = defaultEventBackoff
-	}
-
-	maxEvents := options.MaxPendingEvents
-	if maxEvents == 0 {
-		maxEvents = 50
+		autoPing:         autoPing,
 	}
 
 	consumeCtx, err := jsConsumer.Consume(func(msg jetstream.Msg) {
 		s.handleMsg(ctx, msg)
-	}, jetstream.PullMaxMessages(maxEvents))
+	}, jetstream.PullMaxMessages(options.MaxPendingEvents))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message subscription: %w", err)
 	}
@@ -95,6 +90,22 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 	logger.Debug("Subscribed to consumer")
 	go s.canceler(ctx, consumeCtx)
 	return s.events, nil
+}
+
+func createAutoPing(ctx context.Context, logger *slog.Logger, ackWait time.Duration, configuredAutoPingInterval time.Duration) *AutoPing {
+	pingInterval := configuredAutoPingInterval
+	if pingInterval == 0 {
+		pingInterval = ackWait / 3
+		if pingInterval < 1*time.Second {
+			pingInterval = ackWait / 2
+		}
+	}
+
+	if pingInterval > 0 {
+		return newAutoPing(ctx, logger, pingInterval)
+	}
+
+	return nil
 }
 
 func (s *subscription) canceler(ctx context.Context, consumeCtx jetstream.ConsumeContext) {
@@ -178,6 +189,14 @@ func (s *subscription) newEvent(ctx context.Context, msg jetstream.Msg) (*Event,
 		metadata: md,
 		headers:  parseHeaders(msg),
 	}
+
+	if s.autoPing != nil {
+		id := s.autoPing.Add(event)
+		event.onDone = func() {
+			s.autoPing.Remove(id)
+		}
+	}
+
 	return event, nil
 }
 
@@ -202,6 +221,8 @@ type Event struct {
 	metadata *jetstream.MsgMetadata
 
 	headers *headers
+
+	onDone func()
 }
 
 func (e *Event) Context() context.Context {
@@ -257,6 +278,10 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 			return fmt.Errorf("could not ack message: %w", err)
 		}
 
+		if e.onDone != nil {
+			e.onDone()
+		}
+
 		e.span.SetStatus(codes.Ok, "")
 		return nil
 	}, options.Backoff)
@@ -299,6 +324,10 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 		if err != nil {
 			e.span.RecordError(err)
 			return fmt.Errorf("could not reject message: %w", err)
+		}
+
+		if e.onDone != nil {
+			e.onDone()
 		}
 
 		e.span.SetStatus(codes.Ok, "")
