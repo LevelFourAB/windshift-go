@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go"
-	"github.com/levelfourab/windshift-go/events"
 	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -66,10 +65,7 @@ func main() {
 				v := current.Add(1)
 				value := strconv.Itoa(int(v))
 
-				_, err := eventsClient.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    structpb.NewStringValue(value),
-				})
+				_, err := eventsClient.Publish(ctx, "test", structpb.NewStringValue(value))
 				if err != nil {
 					log.Println("Could not send event", err)
 					time.Sleep(100 * time.Millisecond)

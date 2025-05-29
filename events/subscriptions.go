@@ -200,6 +200,7 @@ type CallOption interface {
 	AckOption
 	RejectOption
 	PingOption
+	PublishOption
 }
 
 type backoffOption delays.DelayDecider
@@ -213,6 +214,10 @@ func (b backoffOption) applyToReject(o *RejectOptions) {
 }
 
 func (b backoffOption) applyToPing(o *PingOptions) {
+	o.Backoff = delays.DelayDecider(b)
+}
+
+func (b backoffOption) applyToPublish(o *PublishOptions) {
 	o.Backoff = delays.DelayDecider(b)
 }
 

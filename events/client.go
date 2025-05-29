@@ -6,6 +6,7 @@ import (
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/levelfourab/windshift-go/events/subscribe"
+	"google.golang.org/protobuf/proto"
 )
 
 // Client is used to interact with events.
@@ -16,8 +17,19 @@ type Client interface {
 	// source events from subjects and other streams.
 	EnsureStream(ctx context.Context, name string, opts ...streams.Option) (streams.Stream, error)
 
-	// Publish an event to a stream.
-	Publish(ctx context.Context, event *OutgoingEvent) (PublishedEvent, error)
+	// Publish an event to a stream. Subject and data are required.
+	//
+	// The subject of the event is used to route the event to the correct
+	// stream and by consumers to filter events. If no stream exists that
+	// can handle the subject then the publish will fail. Can not be blank.
+	//
+	// Data is the data of the message, can not be nil. Will be marshaled
+	// into a [anypb.Any] instance. If the message is already an [anypb.Any]
+	// instance then it will be used as is.
+	//
+	// By default the publish will not retry if it fails, use [WithBackoff]
+	// to enable retries.
+	Publish(ctx context.Context, subject string, data proto.Message, opts ...PublishOption) (PublishedEvent, error)
 
 	// EnsureConsumer creates or updates a consumer for a given stream. There
 	// are two types of consumers, durable and ephemeral.

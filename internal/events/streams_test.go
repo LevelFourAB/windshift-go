@@ -205,10 +205,7 @@ var _ = Describe("Streams", func() {
 				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    &emptypb.Empty{},
-				})
+				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 
 				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(streams.CopyFromStream("test")))
@@ -243,10 +240,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.CachedInfo().State.Msgs).To(Equal(uint64(0)))
 
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    Data(&emptypb.Empty{}),
-				})
+				_, err = manager.Publish(ctx, "test", Data(&emptypb.Empty{}))
 				Expect(err).ToNot(HaveOccurred())
 
 				for i := 0; i < 10; i++ {
@@ -270,15 +264,9 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a few messages to the source stream
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    &emptypb.Empty{},
-				})
+				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
-				e, err := manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    &emptypb.Empty{},
-				})
+				e, err := manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
@@ -311,19 +299,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a few messages to the source stream
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    &emptypb.Empty{},
-				})
+				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 
 				time.Sleep(50 * time.Millisecond)
 				now := time.Now()
 
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    &emptypb.Empty{},
-				})
+				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
@@ -356,10 +338,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a message to the source stream
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    Data(&emptypb.Empty{}),
-				})
+				_, err = manager.Publish(ctx, "test", Data(&emptypb.Empty{}))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
@@ -392,10 +371,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a message to the source stream
-				_, err = manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "test",
-					Data:    Data(&emptypb.Empty{}),
-				})
+				_, err = manager.Publish(ctx, "test", Data(&emptypb.Empty{}))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source

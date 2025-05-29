@@ -83,11 +83,8 @@ subscribed to the stream.
 Example:
 
 ```go
-eventsClient.Publish(ctx, &events.OutgoingEvent{
-  Subject: "orders.created",
-  Data: &ordersv1.OrderCreated{
-    ID: "123",
-  },
+eventsClient.Publish(ctx, "orders.created", &ordersv1.OrderCreated{
+  ID: "123",
 })
 ```
 

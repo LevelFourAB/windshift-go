@@ -45,10 +45,7 @@ var _ = Describe("Event Consumption", func() {
 
 			msg := structpb.NewStringValue("test")
 			Expect(err).ToNot(HaveOccurred())
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    msg,
-			})
+			_, err = manager.Publish(ctx, "events.test", msg)
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -77,10 +74,7 @@ var _ = Describe("Event Consumption", func() {
 
 			msg := structpb.NewStringValue("test")
 			Expect(err).ToNot(HaveOccurred())
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    msg,
-			})
+			_, err = manager.Publish(ctx, "events.test", msg)
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -114,10 +108,7 @@ var _ = Describe("Event Consumption", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(err).ToNot(HaveOccurred())
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -136,10 +127,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("will not receive events published before subscription", func(ctx context.Context) {
-			_, err := manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err := manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			sub, err := manager.EnsureConsumer(ctx, "events")
@@ -156,10 +144,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("can receive events published before subscription", func(ctx context.Context) {
-			_, err := manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err := manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			sub, err := manager.EnsureConsumer(ctx, "events", consumers.WithConsumeFrom(streams.AtStreamStart()))
@@ -193,10 +178,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -226,10 +208,7 @@ var _ = Describe("Event Consumption", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 0; i < 10; i++ {
-				_, err2 := manager.Publish(ctx, &events.OutgoingEvent{
-					Subject: "events.test",
-					Data:    &emptypb.Empty{},
-				})
+				_, err2 := manager.Publish(ctx, "events.test", &emptypb.Empty{})
 				Expect(err2).ToNot(HaveOccurred())
 			}
 
@@ -275,10 +254,7 @@ var _ = Describe("Event Consumption", func() {
 			ec2, err := manager.Subscribe(ctx, "events", "test2")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -307,10 +283,7 @@ var _ = Describe("Event Consumption", func() {
 			cancel1()
 			time.Sleep(50 * time.Millisecond)
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			// Check if the event can be received again
@@ -333,10 +306,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -367,10 +337,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -412,10 +379,7 @@ var _ = Describe("Event Consumption", func() {
 			ec1, err := manager.Subscribe(ctx1, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var event events.Event
@@ -452,10 +416,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			event := <-ec
@@ -486,10 +447,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var event events.Event
@@ -521,10 +479,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var event events.Event
@@ -556,10 +511,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.WithAutoPingInterval(50*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -588,10 +540,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -626,10 +575,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -679,10 +625,7 @@ var _ = Describe("Event Consumption", func() {
 			ec, err := manager.Subscribe(ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Publish(ctx, &events.OutgoingEvent{
-				Subject: "events.test",
-				Data:    &emptypb.Empty{},
-			})
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
