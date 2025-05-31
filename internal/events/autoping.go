@@ -2,10 +2,12 @@ package events
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/levelfourab/windshift-go/internal/queues"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // AutoPing is a helper for automatically pinging events as they are processed.
@@ -47,7 +49,10 @@ func (a *AutoPing) run(ctx context.Context) {
 			}
 
 			err := event.Ping(ctx)
-			if err != nil {
+			if errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
+				a.logger.Debug("Event already acknowledged, removing from queue", slog.Uint64("eventID", event.ID()))
+				continue
+			} else if err != nil {
 				a.logger.Warn("Failed to ping event", slog.Uint64("eventID", event.ID()), slog.String("error", err.Error()))
 			}
 
