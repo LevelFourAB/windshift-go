@@ -100,7 +100,18 @@ func (dq *DelayQueue[T]) Remove(id uint) bool {
 
 	for i, item := range dq.pq {
 		if item.id == id {
+			wasFirst := i == 0
 			heap.Remove(&dq.pq, i)
+
+			// If we removed the earliest item and there are still items left,
+			// wake the queue so it recalculates the timer for the new earliest item
+			if wasFirst && dq.pq.Len() > 0 {
+				select {
+				case dq.wakeChan <- struct{}{}:
+				default:
+				}
+			}
+
 			return true
 		}
 	}
@@ -112,6 +123,13 @@ func (dq *DelayQueue[T]) run(ctx context.Context, itemsChan chan<- T) {
 	defer close(itemsChan)
 
 	var timer *time.Timer
+	defer func() {
+		// Clean up timer on exit to prevent resource leak
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+
 	for {
 		dq.mu.Lock()
 		if dq.pq.Len() == 0 {
