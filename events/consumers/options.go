@@ -26,6 +26,9 @@ type Options struct {
 	// InactiveThreshold is the maximum time the consumer can be inactive
 	// before it is automatically removed.
 	InactiveThreshold time.Duration
+	// MaxPendingEvents is the maximum number of events that can be pending for
+	// this consumer. If not specified the server's default will be used.
+	MaxPendingEvents uint
 }
 
 // Option is an option for creating or updating a consumer.
@@ -118,6 +121,15 @@ func WithProcessingTimeout(timeout time.Duration) Option {
 func WithMaxDeliveryAttempts(attempts uint) Option {
 	return func(o *Options) error {
 		o.MaxDeliveryAttempts = attempts
+		return nil
+	}
+}
+
+// WithMaxPendingEvents sets the maximum number of events that can be pending for
+// this consumer. If not specified the server's default will be used.
+func WithMaxPendingEvents(maxPendingEvents uint) Option {
+	return func(o *Options) error {
+		o.MaxPendingEvents = maxPendingEvents
 		return nil
 	}
 }

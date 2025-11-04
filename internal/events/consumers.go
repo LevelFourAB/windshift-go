@@ -216,6 +216,10 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 	if config.Durable == "" && config.InactiveThreshold == 0 {
 		config.InactiveThreshold = 1 * time.Hour
 	}
+
+	if options.MaxPendingEvents > 0 {
+		config.MaxAckPending = int(options.MaxPendingEvents)
+	}
 }
 
 func getOptionsAsAttr(options *consumers.Options) slog.Attr {
