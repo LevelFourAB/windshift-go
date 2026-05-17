@@ -29,13 +29,49 @@ type subscription struct {
 	// channel is the channel used to send events to the caller.
 	events chan events.Event
 
+	// consumeCtx is the underlying NATS pull consumer. Stopped or drained
+	// when the subscription is shut down.
+	consumeCtx jetstream.ConsumeContext
+
+	// closeCtx is canceled at final close (Stop or Drain finalize). It
+	// parents auto-ping (so pinging continues through the drain window) and
+	// unblocks a handleMsg send that is stuck on a channel nobody reads.
+	closeCtx    context.Context
+	closeCancel context.CancelFunc
+
+	// drainPrefetched controls whether Drain flushes prefetched-but-undelivered
+	// events through the channel (true) or abandons them (false).
+	drainPrefetched bool
+
 	// mu guards closed and serializes sending on events with closing it,
-	// so a message delivered after the context is canceled can never send
-	// on a closed channel.
+	// so a message delivered after close can never send on a closed channel.
 	mu sync.Mutex
 	// closed indicates that events has been closed and no more events
 	// should be sent.
 	closed bool
+
+	// pending counts events that are being handled or have been delivered
+	// but not yet settled (Ack/Reject). It reaches zero exactly when the
+	// subscription is fully drained.
+	pending sync.WaitGroup
+
+	// abandonCh is closed when prefetched-but-undelivered events should be
+	// abandoned (Stop, or a default Drain). A handleMsg whose channel send
+	// has not yet been received drops its event when this is closed,
+	// without waiting for the drain deadline. It is distinct from closeCtx
+	// so that abandoning undelivered events does not also stop auto-ping
+	// for events that were already delivered and are still being settled.
+	abandonCh   chan struct{}
+	abandonOnce sync.Once
+
+	// stopCh is closed by Stop. It preempts an in-progress Drain.
+	stopCh   chan struct{}
+	stopOnce sync.Once
+
+	// drainOnce makes Drain idempotent; drainErr stores the result so
+	// subsequent/concurrent callers return the same value.
+	drainOnce sync.Once
+	drainErr  error
 
 	// callRetryBackoff is the default backoff strategy to use when acking,
 	// rejecting or pinging an event fails.
@@ -45,7 +81,9 @@ type subscription struct {
 	autoPing *AutoPing
 }
 
-func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...events.SubscribeOption) (<-chan events.Event, error) {
+var _ events.Subscription = (*subscription)(nil)
+
+func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...events.SubscribeOption) (events.Subscription, error) {
 	ctx, span := c.tracer.Start(
 		ctx,
 		stream+" subscribe",
@@ -77,13 +115,25 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 
 	logger := c.logger.With(slog.String("stream", stream), slog.String("consumer", consumer))
 
-	autoPing := createAutoPing(ctx, logger, jsConsumer.CachedInfo().Config.AckWait, options.AutoPingInterval)
+	// closeCtx lives for the whole subscription lifetime, independent of the
+	// Subscribe ctx. It is canceled only at final close (Stop or Drain
+	// finalize), so auto-ping keeps pinging outstanding events through the
+	// drain window and a stuck channel send is unblocked.
+	closeCtx, closeCancel := context.WithCancel(context.WithoutCancel(ctx))
+
+	autoPing := createAutoPing(closeCtx, logger, jsConsumer.CachedInfo().Config.AckWait, options.AutoPingInterval)
 
 	s := &subscription{
 		client: c,
 		logger: logger,
 
-		events:           make(chan events.Event),
+		events:          make(chan events.Event),
+		closeCtx:        closeCtx,
+		closeCancel:     closeCancel,
+		drainPrefetched: options.DrainPrefetched,
+		abandonCh:       make(chan struct{}),
+		stopCh:          make(chan struct{}),
+
 		callRetryBackoff: options.CallRetryBackoff,
 		autoPing:         autoPing,
 	}
@@ -92,12 +142,102 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		s.handleMsg(ctx, msg)
 	}, jetstream.PullMaxMessages(options.Prefetch))
 	if err != nil {
+		closeCancel()
 		return nil, fmt.Errorf("failed to create message subscription: %w", err)
 	}
+	s.consumeCtx = consumeCtx
 
 	logger.Debug("Subscribed to consumer")
-	go s.canceler(ctx, consumeCtx)
-	return s.events, nil
+	return s, nil
+}
+
+func (s *subscription) Events() <-chan events.Event {
+	return s.events
+}
+
+// Stop immediately stops the subscription, abandoning outstanding events.
+// Abandoned events are redelivered once the consumer's processing timeout
+// elapses. Idempotent and non-blocking; preempts an in-progress Drain.
+func (s *subscription) Stop() {
+	s.stopOnce.Do(func() {
+		s.logger.Debug("Stopping subscription")
+
+		// Stop delivery first. After this no further callbacks run, so
+		// pending can only decrease.
+		s.consumeCtx.Stop()
+		// Abandon any prefetched-but-undelivered events.
+		s.abandonUndelivered()
+		// Unblock auto-ping and any handleMsg send stuck on closeCtx.
+		s.closeCancel()
+		// Preempt an in-progress Drain.
+		close(s.stopCh)
+
+		s.closeEvents()
+	})
+}
+
+// Drain stops pulling new events and blocks until every already-delivered
+// event has been settled, bounded by ctx. See [events.Subscription.Drain].
+func (s *subscription) Drain(ctx context.Context) error {
+	s.drainOnce.Do(func() {
+		s.logger.Debug("Draining subscription")
+
+		// Halt intake. Skip if Stop already ran (consumeCtx already stopped).
+		select {
+		case <-s.stopCh:
+		default:
+			if s.drainPrefetched {
+				// Flush prefetched events through the channel.
+				s.consumeCtx.Drain()
+			} else {
+				// Discard the prefetch buffer and abandon any event still
+				// stuck in a not-yet-received channel send, so the drain
+				// only waits for events that were actually delivered.
+				s.consumeCtx.Stop()
+				s.abandonUndelivered()
+			}
+		}
+
+		drainedCh := make(chan struct{})
+		go func() {
+			s.pending.Wait()
+			close(drainedCh)
+		}()
+
+		select {
+		case <-drainedCh:
+			s.drainErr = nil
+		case <-ctx.Done():
+			s.drainErr = fmt.Errorf("drain timed out: %w", ctx.Err())
+		case <-s.stopCh:
+			s.drainErr = events.ErrSubscriptionStopped
+		}
+
+		// Final close: cancel closeCtx (stops auto-ping, unblocks a stuck
+		// send) and close the events channel.
+		s.closeCancel()
+		s.closeEvents()
+	})
+	return s.drainErr
+}
+
+// abandonUndelivered signals, exactly once, that handleMsg sends which have
+// not yet been received should drop their events instead of waiting.
+func (s *subscription) abandonUndelivered() {
+	s.abandonOnce.Do(func() {
+		close(s.abandonCh)
+	})
+}
+
+// closeEvents closes the events channel exactly once, guarded by the
+// closed flag and mu so it never races a handleMsg send.
+func (s *subscription) closeEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		s.closed = true
+		close(s.events)
+	}
 }
 
 func createAutoPing(ctx context.Context, logger *slog.Logger, ackWait time.Duration, configuredAutoPingInterval time.Duration) *AutoPing {
@@ -116,24 +256,16 @@ func createAutoPing(ctx context.Context, logger *slog.Logger, ackWait time.Durat
 	return nil
 }
 
-func (s *subscription) canceler(ctx context.Context, consumeCtx jetstream.ConsumeContext) {
-	<-ctx.Done()
-	s.logger.Debug("Context done, stopping subscription")
-
-	// Stop delivery first. After this point no new messages will be
-	// dispatched, but a callback may still be in-flight or buffered, so we
-	// synchronize via mu before closing the channel.
-	consumeCtx.Stop()
-
-	s.mu.Lock()
-	s.closed = true
-	close(s.events)
-	s.mu.Unlock()
-}
-
 func (s *subscription) handleMsg(ctx context.Context, msg jetstream.Msg) {
+	// Account for this message as soon as the callback fires. The token is
+	// released exactly once: by Event.finish for events whose ownership is
+	// transferred (counted), or manually here for events that are never
+	// created or never delivered.
+	s.pending.Add(1)
+
 	event, err2 := s.newEvent(ctx, msg)
 	if err2 != nil {
+		s.pending.Done()
 		return
 	}
 
@@ -145,29 +277,45 @@ func (s *subscription) handleMsg(ctx context.Context, msg jetstream.Msg) {
 		)
 	}
 
-	// Hold mu for the duration of the send so the canceler cannot close
-	// the channel underneath us. The send is bounded by ctx.Done(), so the
-	// canceler never blocks on mu for longer than it takes this select to
-	// observe the canceled context.
+	// Hold mu for the duration of the send so a concurrent close cannot
+	// close the channel underneath us. The send is bounded by
+	// closeCtx.Done(), so a closer never blocks on mu for longer than it
+	// takes this select to observe the canceled closeCtx.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.closed {
-		// The subscription has been canceled and the channel closed; drop
-		// the event rather than sending on a closed channel. The library owns
-		// the process span, so end it here.
+		// The subscription has been stopped and the channel closed; drop
+		// the event rather than sending on a closed channel. The library
+		// owns the process span, so end it here. Not counted, so release
+		// the token directly.
 		event.finish(codes.Error, "subscription closed before delivery")
+		s.pending.Done()
 		return
 	}
 
+	// Transfer token ownership to the event before the send becomes
+	// observable by a receiver, so Event.finish (which releases the token
+	// for counted events) sees counted == true regardless of which arm
+	// wins or how quickly the receiver settles.
+	event.counted = true
+
 	select {
 	case s.events <- event:
-		// Event sent to channel. Ownership of the process span passes to the
-		// consumer, who must Ack/Reject to finish it.
-	case <-ctx.Done():
-		// Context is done, stop trying to fetch messages. End the process
-		// span as the event will never be delivered.
-		event.finish(codes.Error, "context canceled before delivery")
+		// Event sent to channel. Ownership of the process span and the
+		// pending token passes to the consumer, who must Ack/Reject to
+		// finish it (releasing the token via Event.finish).
+	case <-s.abandonCh:
+		// Intake has been stopped and prefetched-but-undelivered events
+		// are being abandoned. Drop this one rather than blocking the
+		// drain; NATS redelivers it once the processing timeout elapses.
+		// finish releases the token because the event is counted.
+		event.finish(codes.Error, "subscription draining, prefetched event abandoned")
+	case <-s.closeCtx.Done():
+		// The subscription is closing and nobody is reading the channel.
+		// End the process span as the event will never be delivered;
+		// finish releases the token because the event is counted.
+		event.finish(codes.Error, "subscription closed before delivery")
 	}
 }
 
@@ -291,6 +439,11 @@ type Event struct {
 
 	onDone func()
 
+	// counted is true once the subscription has transferred ownership of
+	// the pending token to this event. When set, finish releases the token
+	// via s.pending.Done(); when unset the token is released elsewhere.
+	counted bool
+
 	finishOnce sync.Once
 }
 
@@ -308,6 +461,9 @@ func (e *Event) finish(code codes.Code, desc string) {
 		}
 		e.span.SetStatus(code, desc)
 		e.span.End()
+		if e.counted {
+			e.sub.pending.Done()
+		}
 	})
 }
 

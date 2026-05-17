@@ -133,15 +133,15 @@ the subscriptions.
 Example:
 
 ```go
-events, err := eventsClient.Subscribe(ctx, "orders", "idOfConsumer")
+sub, err := eventsClient.Subscribe(ctx, "orders", "idOfConsumer")
 
-for event := range events {
+for event := range sub.Events() {
   // Context includes tracing data from the publishing of the event
   ctx := event.Context()
 
   // Unmarshal the event data to process it
   data, err := event.UnmarshalNew()
-  
+
   // Acknowledge that event was processed (or reject it)
   err := event.Ack(ctx)
   if err != nil {
@@ -150,8 +150,23 @@ for event := range events {
 }
 ```
 
-Subscriptions stay active as long as the context remains uncanceled and will
-reconnect to NATS if the connection is lost.
+The returned `Subscription` owns the lifecycle of the subscription. The context
+passed to `Subscribe` is only used for setup (consumer lookup and tracing);
+canceling it does not stop the subscription. Shut it down explicitly:
+
+- `sub.Drain(ctx)` stops pulling new events and blocks until every
+  already-delivered event has been settled, bounded by `ctx`. It returns `nil`
+  once everything is settled, a wrapped context error if the deadline elapses
+  with events still outstanding (those fall back to NATS redelivery), or
+  `events.ErrSubscriptionStopped` if `Stop` was called.
+- `sub.Stop()` stops the subscription immediately, abandoning outstanding
+  events (NATS redelivers them after the processing timeout).
+
+`Drain` does not cancel `event.Context()`; settle in-flight events with a
+context that outlives the drain. The `Events()` channel is closed once the
+subscription is drained or stopped, so ranging over it terminates. Use
+`events.WithDrainPrefetched()` to also flush locally prefetched-but-undelivered
+events through the channel during the drain window instead of abandoning them.
 
 ### Acknowledging and rejecting events
 

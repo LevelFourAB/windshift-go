@@ -55,10 +55,14 @@ type Client interface {
 	// must have been created before calling this method, use [Client.EnsureConsumer]
 	// to create a consumer.
 	//
-	// Subscriptions are valid until the context is canceled. When the
-	// context is canceled the returned channel is closed once delivery has
-	// stopped, so ranging over it will terminate.
+	// The returned [Subscription] owns the lifecycle of the subscription. The
+	// ctx passed here is only used for setup (consumer lookup and tracing) and
+	// canceling it does not stop the subscription. Use [Subscription.Drain]
+	// for a graceful shutdown that settles in-flight events, or
+	// [Subscription.Stop] for an immediate one. Range over
+	// [Subscription.Events] to receive events; the channel is closed once the
+	// subscription is drained or stopped.
 	//
 	// To control the number of events buffered locally use [WithPrefetch].
-	Subscribe(ctx context.Context, stream string, consumer string, opts ...SubscribeOption) (<-chan Event, error)
+	Subscribe(ctx context.Context, stream string, consumer string, opts ...SubscribeOption) (Subscription, error)
 }

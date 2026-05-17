@@ -46,10 +46,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), events.WithPrefetch(*parallelism))
+	sub, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), events.WithPrefetch(*parallelism))
 	if err != nil {
 		log.Fatal(err)
 	}
+	eventChannel := sub.Events()
 
 	pending := atomic.Int32{}
 	processing := atomic.Int32{}
@@ -89,7 +90,9 @@ func main() {
 				sleepInMS := *workLoadTime
 				time.Sleep(time.Duration(sleepInMS) * time.Millisecond)
 
-				err = event.Ack(ctx)
+				// Settle with a context that outlives the drain window so
+				// in-flight events can be acked during graceful shutdown.
+				err = event.Ack(context.Background())
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -102,6 +105,17 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
+			// Graceful shutdown: stop pulling new events and wait for
+			// in-flight work to be settled, bounded by a fresh context
+			// that outlives the drain.
+			log.Println("Shutting down, draining in-flight events...")
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer drainCancel()
+			if err := sub.Drain(drainCtx); err != nil {
+				log.Println("Drain did not complete cleanly:", err)
+			} else {
+				log.Println("Drained cleanly")
+			}
 			return
 		case e := <-eventChannel:
 			// Acquire a semaphore slot

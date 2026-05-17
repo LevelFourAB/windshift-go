@@ -27,6 +27,10 @@ var ErrDataRequired = errors.New("data is required")
 // ErrConsumerRequired is used when a consumer is required but not provided.
 var ErrConsumerRequired = NewValidationError("consumer is required")
 
+// ErrSubscriptionStopped is returned by [Subscription.Drain] when [Subscription.Stop]
+// was called, either before or during the drain.
+var ErrSubscriptionStopped = errors.New("subscription stopped")
+
 type validationError struct {
 	err string
 }

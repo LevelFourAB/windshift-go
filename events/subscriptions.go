@@ -8,6 +8,38 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Subscription is a handle to an active subscription. The subscription owns
+// its own lifecycle: the context passed to [Client.Subscribe] is only used for
+// setup (consumer lookup and tracing) and does not tear the subscription down.
+// Use [Subscription.Drain] for a graceful shutdown that settles in-flight
+// events, or [Subscription.Stop] for an immediate one.
+//
+// This mirrors the vocabulary of [net/http.Server] (Shutdown / Close).
+type Subscription interface {
+	// Events is the channel of received events. It is closed once Drain
+	// completes or Stop is called, so ranging over it terminates.
+	Events() <-chan Event
+
+	// Drain stops pulling new events and blocks until every
+	// already-delivered event has been settled (Ack/Reject), bounded by
+	// ctx. Returns nil when all settled; ctx's error (wrapped) if the
+	// deadline elapses with events still outstanding; ErrSubscriptionStopped
+	// if Stop was called. The Events channel is closed on return. Idempotent.
+	//
+	// Like [net/http.Server.Shutdown], a deadline does not force-kill
+	// outstanding events: they simply fall back to redelivery once the
+	// consumer's processing timeout (see [WithProcessingTimeout]) elapses.
+	// [Event.Context] is never canceled by Drain; callers must settle
+	// in-flight events with a context that outlives the drain.
+	Drain(ctx context.Context) error
+
+	// Stop immediately stops the subscription, abandoning outstanding
+	// events. Abandoned events are redelivered once the consumer's
+	// processing timeout (see [WithProcessingTimeout]) elapses. Idempotent;
+	// preempts an in-progress Drain.
+	Stop()
+}
+
 // Event is a received event that should be processed. Events must be
 // acknowledged using [Event.Ack] or rejected using [Event.Reject]. If the
 // event is not acknowledged or rejected within the time frame set by the
@@ -254,6 +286,11 @@ type SubscribeOptions struct {
 	// Defaults to zero which will determine the ping interval based on the
 	// timeout of the consumer.
 	AutoPingInterval time.Duration
+
+	// DrainPrefetched controls what happens to events that have been
+	// prefetched locally but not yet delivered to the Events channel when
+	// [Subscription.Drain] is called. Defaults to false (abandon prefetched).
+	DrainPrefetched bool
 }
 
 func (o *SubscribeOptions) Apply(opts []SubscribeOption) {
@@ -304,6 +341,35 @@ func (withoutAutoPingOption) applyToSubscribe(opts *SubscribeOptions) {
 // WithoutAutoPing disables automatic pinging of events.
 func WithoutAutoPing() SubscribeOption {
 	return withoutAutoPingOption{}
+}
+
+type withDrainPrefetchedOption struct{}
+
+func (withDrainPrefetchedOption) applyToSubscribe(opts *SubscribeOptions) {
+	opts.DrainPrefetched = true
+}
+
+// WithDrainPrefetched makes [Subscription.Drain] flush events that have been
+// prefetched locally but not yet delivered to the Events channel through the
+// channel during the drain window, instead of abandoning them.
+//
+// By default (without this option) prefetched-but-undelivered events are
+// abandoned when draining and redelivered once the consumer's processing
+// timeout (see [WithProcessingTimeout]) elapses. This option only reduces
+// the number of such redeliveries.
+//
+// This is best-effort. The underlying NATS consumer exposes no signal for
+// when its prefetch buffer has been fully processed: an immediate stop
+// discards buffered messages, while a drain processes them through the
+// handler with no completion notification. With this option there is
+// therefore a small window where the internal count of unsettled events can
+// momentarily reach zero between two buffered events, allowing Drain to
+// return slightly early. No event is ever lost: any unsettled event is
+// redelivered once the processing timeout elapses. Without this option the
+// behaviour is exact, because once intake has been stopped no further events
+// are handled and the unsettled count only decreases.
+func WithDrainPrefetched() SubscribeOption {
+	return withDrainPrefetchedOption{}
 }
 
 type autoPingIntervalOption time.Duration

@@ -14,8 +14,10 @@ type Consumer interface {
 
 	// Subscribe starts consuming events from this consumer.
 	//
-	// Subscriptions are valid until the context is canceled.
-	Subscribe(ctx context.Context, opts ...SubscribeOption) (<-chan Event, error)
+	// The returned [Subscription] owns the lifecycle of the subscription; the
+	// ctx is only used for setup (consumer lookup and tracing). Use
+	// [Subscription.Drain] or [Subscription.Stop] to shut it down.
+	Subscribe(ctx context.Context, opts ...SubscribeOption) (Subscription, error)
 }
 
 // ConsumerOptions contains resolved options for creating or updating a

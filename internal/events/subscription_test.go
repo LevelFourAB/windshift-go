@@ -23,6 +23,18 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// subscribe wraps Client.Subscribe and returns just the event channel, for
+// the many call sites that only consume events and never drive the
+// subscription's lifecycle. Tests that need to Drain or Stop call
+// Client.Subscribe directly to get the Subscription handle.
+func subscribe(c events.Client, ctx context.Context, stream, consumer string, opts ...events.SubscribeOption) (<-chan events.Event, error) {
+	sub, err := c.Subscribe(ctx, stream, consumer, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return sub.Events(), nil
+}
+
 var _ = Describe("Event Consumption", func() {
 	var manager events.Client
 
@@ -38,7 +50,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Subscribe(ctx, "events", sub.Name())
+			_, err = subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -46,7 +58,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			msg := structpb.NewStringValue("test")
@@ -75,7 +87,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			msg := structpb.NewStringValue("test")
@@ -107,10 +119,10 @@ var _ = Describe("Event Consumption", func() {
 			sub2, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := manager.Subscribe(ctx, "events", sub1.Name())
+			ec1, err := subscribe(manager, ctx, "events", sub1.Name())
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := manager.Subscribe(ctx, "events", sub2.Name())
+			ec2, err := subscribe(manager, ctx, "events", sub2.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(err).ToNot(HaveOccurred())
@@ -139,7 +151,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -156,7 +168,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithConsumeFrom(events.AtStreamStart()))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -173,7 +185,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Subscribe(ctx, "events", "test")
+			_, err = subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -181,7 +193,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -207,10 +219,10 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := manager.Subscribe(ctx, "events", "test")
+			ec1, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := manager.Subscribe(ctx, "events", "test")
+			ec2, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 0; i < 10; i++ {
@@ -254,10 +266,10 @@ var _ = Describe("Event Consumption", func() {
 			_, err = manager.EnsureConsumer(ctx, "events", events.WithName("test2"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := manager.Subscribe(ctx, "events", "test1")
+			ec1, err := subscribe(manager, ctx, "events", "test1")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := manager.Subscribe(ctx, "events", "test2")
+			ec2, err := subscribe(manager, ctx, "events", "test2")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -278,42 +290,42 @@ var _ = Describe("Event Consumption", func() {
 			}
 		})
 
-		It("canceling context stops receiving events", func(ctx context.Context) {
+		It("Stop stops receiving events", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ctx1, cancel1 := context.WithCancel(ctx)
-			ec, err := manager.Subscribe(ctx1, "events", "test")
+			sub, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
 
-			cancel1()
+			sub.Stop()
 			time.Sleep(50 * time.Millisecond)
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Check if the event can be received again
+			// The channel is closed and no event is delivered.
 			select {
 			case _, ok := <-ec:
 				if ok {
-					Fail("event received after close")
+					Fail("event received after stop")
 				}
 			case <-time.After(200 * time.Millisecond):
 			}
 		})
 
-		It("canceling context closes the channel", func(ctx context.Context) {
+		It("Stop closes the channel", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ctx1, cancel1 := context.WithCancel(ctx)
-			ec, err := manager.Subscribe(ctx1, "events", "test")
+			sub, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
 
-			cancel1()
+			sub.Stop()
 
 			// Ranging over the channel must terminate, so it has to be
-			// closed once delivery has stopped.
+			// closed once the subscription is stopped.
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -325,28 +337,55 @@ var _ = Describe("Event Consumption", func() {
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):
-				Fail("channel was not closed after context cancellation")
+				Fail("channel was not closed after Stop")
 			}
 		})
 
-		It("canceling context while a send is blocked closes the channel without panicking", func(ctx context.Context) {
+		It("Drain closes the channel", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ctx1, cancel1 := context.WithCancel(ctx)
-			ec, err := manager.Subscribe(ctx1, "events", "test")
+			sub, err := manager.Subscribe(ctx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			drainCtx, drainCancel := context.WithTimeout(ctx, 2*time.Second)
+			defer drainCancel()
+			Expect(sub.Drain(drainCtx)).ToNot(HaveOccurred())
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				//nolint:revive // draining until closed is the point
+				for range ec {
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				Fail("channel was not closed after Drain")
+			}
+		})
+
+		It("Stop unblocks a blocked send and closes the channel without panicking", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
+			sub, err := manager.Subscribe(ctx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
 			// Publish events but never read from the channel, so the
-			// internal send blocks. Canceling must unblock it and close
-			// the channel without a send-on-closed-channel panic.
+			// internal send blocks. Stop must unblock it and close the
+			// channel without a send-on-closed-channel panic.
 			for i := 0; i < 10; i++ {
 				_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 			}
 
 			time.Sleep(100 * time.Millisecond)
-			cancel1()
+			sub.Stop()
 
 			done := make(chan struct{})
 			go func() {
@@ -359,7 +398,7 @@ var _ = Describe("Event Consumption", func() {
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):
-				Fail("channel was not closed after context cancellation")
+				Fail("channel was not closed after Stop")
 			}
 		})
 
@@ -370,7 +409,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -401,7 +440,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -446,7 +485,7 @@ var _ = Describe("Event Consumption", func() {
 			// already-finalized message as a permanent outcome, the second
 			// Reject would block on retries for several seconds before
 			// returning.
-			ec, err := manager.Subscribe(ctx, "events", "test",
+			ec, err := subscribe(manager, ctx, "events", "test",
 				events.WithDefaultRetryBackoff(delays.Constant(5*time.Second)))
 			Expect(err).ToNot(HaveOccurred())
 
@@ -484,9 +523,9 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ctx1, cancel1 := context.WithCancel(ctx)
-			ec1, err := manager.Subscribe(ctx1, "events", "test")
+			sub1, err := manager.Subscribe(ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
+			ec1 := sub1.Events()
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
@@ -500,9 +539,11 @@ var _ = Describe("Event Consumption", func() {
 				Fail("no event received")
 			}
 
-			cancel1()
+			// Stop the first subscription so the rejected event is
+			// redelivered to the second instance rather than back here.
+			sub1.Stop()
 
-			ec2, err := manager.Subscribe(ctx, "events", "test")
+			ec2, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			err = event.Reject(ctx)
@@ -522,7 +563,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -553,7 +594,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -585,7 +626,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "events", "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -617,7 +658,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", events.WithAutoPingInterval(50*time.Millisecond))
+			ec, err := subscribe(manager, ctx, "events", "test", events.WithAutoPingInterval(50*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -660,7 +701,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test",
+			ec, err := subscribe(manager, ctx, "events", "test",
 				events.WithAutoPingInterval(25*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
@@ -735,7 +776,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			ec, err := subscribe(manager, ctx, "events", "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -770,7 +811,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			ec, err := subscribe(manager, ctx, "events", "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -801,6 +842,432 @@ var _ = Describe("Event Consumption", func() {
 			case <-time.After(1000 * time.Millisecond):
 				Fail("redelivered event not received")
 			}
+		})
+	})
+
+	Describe("Draining", func() {
+		It("waits for an in-flight event then closes the channel and returns nil once it is acked", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(5*time.Second),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var event events.Event
+			select {
+			case event = <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			drainResult := make(chan error, 1)
+			go func() {
+				drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				drainResult <- sub.Drain(drainCtx)
+			}()
+
+			// Drain must block while the event is still in-flight.
+			select {
+			case <-drainResult:
+				Fail("Drain returned before the in-flight event was settled")
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			// Settle with a context that outlives the drain.
+			Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+
+			select {
+			case err := <-drainResult:
+				Expect(err).ToNot(HaveOccurred())
+			case <-time.After(2 * time.Second):
+				Fail("Drain did not return after the event was acked")
+			}
+
+			// The channel must be closed once Drain completes.
+			_, ok := <-ec
+			Expect(ok).To(BeFalse())
+		})
+
+		It("returns a wrapped context error when an event is never settled before the deadline", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(500*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			// Never settle the event; the drain must time out.
+			drainCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+			defer cancel()
+			err = sub.Drain(drainCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+
+			// The channel must still be closed on a timed-out drain.
+			_, ok := <-ec
+			Expect(ok).To(BeFalse())
+
+			// The unsettled event is redelivered to a fresh subscription.
+			sub2, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			select {
+			case event := <-sub2.Events():
+				Expect(event).ToNot(BeNil())
+				Expect(event.DeliveryAttempt()).To(BeNumerically(">=", 2))
+				Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+			case <-time.After(3 * time.Second):
+				Fail("unsettled event was not redelivered")
+			}
+		})
+
+		It("Stop closes the channel immediately, abandons the in-flight event, and is idempotent", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(300*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			sub.Stop()
+			// Idempotent: a second Stop must not panic.
+			sub.Stop()
+
+			Eventually(func() bool {
+				_, ok := <-ec
+				return ok
+			}).Should(BeFalse())
+
+			// The abandoned event is redelivered to a fresh subscription.
+			sub2, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			select {
+			case event := <-sub2.Events():
+				Expect(event).ToNot(BeNil())
+				Expect(event.DeliveryAttempt()).To(BeNumerically(">=", 2))
+				Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+			case <-time.After(3 * time.Second):
+				Fail("abandoned event was not redelivered")
+			}
+		})
+
+		It("Stop during an in-progress Drain makes Drain return ErrSubscriptionStopped", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(5*time.Second),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			drainResult := make(chan error, 1)
+			go func() {
+				drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				drainResult <- sub.Drain(drainCtx)
+			}()
+
+			// Let Drain start and block on the in-flight event.
+			select {
+			case <-drainResult:
+				Fail("Drain returned before being preempted")
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			sub.Stop()
+
+			select {
+			case err := <-drainResult:
+				Expect(errors.Is(err, events.ErrSubscriptionStopped)).To(BeTrue())
+			case <-time.After(2 * time.Second):
+				Fail("Drain did not return after Stop")
+			}
+		})
+
+		It("is idempotent and safe under concurrent callers", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(5*time.Second),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+				Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			const callers = 5
+			results := make(chan error, callers)
+			for i := 0; i < callers; i++ {
+				go func() {
+					drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					results <- sub.Drain(drainCtx)
+				}()
+			}
+
+			for i := 0; i < callers; i++ {
+				select {
+				case err := <-results:
+					Expect(err).ToNot(HaveOccurred())
+				case <-time.After(3 * time.Second):
+					Fail("concurrent Drain caller did not return")
+				}
+			}
+
+			// A subsequent Drain returns the same stored result.
+			Expect(sub.Drain(ctx)).ToNot(HaveOccurred())
+		})
+
+		It("auto-ping keeps an outstanding event alive during a slow drain", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("test"),
+				events.WithProcessingTimeout(200*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "test",
+				events.WithAutoPingInterval(50*time.Millisecond))
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			// A second subscription on the same durable consumer would
+			// receive the event if it were redelivered during the drain.
+			sub2, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var event events.Event
+			select {
+			case event = <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			drainResult := make(chan error, 1)
+			go func() {
+				drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				drainResult <- sub.Drain(drainCtx)
+			}()
+
+			// Hold the event well past the processing timeout. Auto-ping
+			// must keep it alive so it is not redelivered to sub2.
+			select {
+			case e := <-sub2.Events():
+				Fail("event was redelivered during the drain (auto-ping did not keep it alive): " +
+					strconv.FormatUint(e.ID(), 10))
+			case <-time.After(600 * time.Millisecond):
+			}
+
+			Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+
+			select {
+			case err := <-drainResult:
+				Expect(err).ToNot(HaveOccurred())
+			case <-time.After(2 * time.Second):
+				Fail("Drain did not return after the event was acked")
+			}
+		})
+
+		It("abandons prefetched events by default but flushes them with WithDrainPrefetched", func(ctx context.Context) {
+			By("abandoning prefetched events by default")
+			_, err := manager.EnsureConsumer(ctx, "events",
+				events.WithName("abandon"),
+				events.WithProcessingTimeout(500*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := manager.Subscribe(ctx, "events", "abandon",
+				events.WithPrefetch(10), events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			for i := 0; i < 3; i++ {
+				_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Receive and settle the first event; the rest are prefetched
+			// but not yet delivered (the handler is blocked on the send).
+			var first events.Event
+			select {
+			case first = <-ec:
+				Expect(first).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+			Expect(first.Ack(context.Background())).ToNot(HaveOccurred())
+
+			drainCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			Expect(sub.Drain(drainCtx)).ToNot(HaveOccurred())
+
+			// The prefetched, undelivered events were abandoned and are
+			// redelivered to a fresh subscription.
+			sub2, err := manager.Subscribe(ctx, "events", "abandon", events.WithoutAutoPing())
+			Expect(err).ToNot(HaveOccurred())
+			received := 0
+			for received < 2 {
+				select {
+				case event := <-sub2.Events():
+					Expect(event).ToNot(BeNil())
+					Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+					received++
+				case <-time.After(3 * time.Second):
+					Fail("abandoned prefetched events were not redelivered")
+				}
+			}
+
+			By("flushing prefetched events with WithDrainPrefetched")
+			_, err = manager.EnsureConsumer(ctx, "events",
+				events.WithName("flush"),
+				events.WithProcessingTimeout(2*time.Second),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			flushSub, err := manager.Subscribe(ctx, "events", "flush",
+				events.WithPrefetch(10), events.WithoutAutoPing(),
+				events.WithDrainPrefetched())
+			Expect(err).ToNot(HaveOccurred())
+			fec := flushSub.Events()
+
+			for i := 0; i < 3; i++ {
+				_, err = manager.Publish(ctx, "events.flush", &emptypb.Empty{})
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			var firstFlush events.Event
+			select {
+			case firstFlush = <-fec:
+				Expect(firstFlush).ToNot(BeNil())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			drainResult := make(chan error, 1)
+			go func() {
+				dctx, c := context.WithTimeout(context.Background(), 5*time.Second)
+				defer c()
+				drainResult <- flushSub.Drain(dctx)
+			}()
+
+			// Receive the first event plus the two prefetched events
+			// through the channel during the drain window before settling
+			// any of them. Keeping at least one delivered-but-unsettled
+			// event outstanding at all times ensures the internal pending
+			// count never momentarily reaches zero between buffered
+			// callbacks (the documented best-effort window), so all three
+			// are reliably flushed here.
+			flushed := []events.Event{firstFlush}
+			for len(flushed) < 3 {
+				select {
+				case event := <-fec:
+					if event == nil {
+						Fail("channel closed before all prefetched events were flushed")
+					}
+					flushed = append(flushed, event)
+				case <-time.After(3 * time.Second):
+					Fail("prefetched events were not flushed during the drain")
+				}
+			}
+			for _, event := range flushed {
+				Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+			}
+
+			select {
+			case err := <-drainResult:
+				Expect(err).ToNot(HaveOccurred())
+			case <-time.After(2 * time.Second):
+				Fail("Drain did not return after prefetched events were flushed")
+			}
+		})
+
+		It("canceling the Subscribe context does not stop the subscription or close the channel", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
+			Expect(err).ToNot(HaveOccurred())
+
+			subCtx, cancel := context.WithCancel(ctx)
+			sub, err := manager.Subscribe(subCtx, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+			ec := sub.Events()
+
+			// Canceling the setup context must not tear down the
+			// subscription nor close the channel.
+			cancel()
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event, ok := <-ec:
+				Expect(ok).To(BeTrue(), "channel must not be closed by Subscribe ctx cancellation")
+				Expect(event).ToNot(BeNil())
+				Expect(event.Ack(context.Background())).ToNot(HaveOccurred())
+			case <-time.After(2 * time.Second):
+				Fail("event was not delivered after Subscribe ctx cancellation")
+			}
+
+			sub.Stop()
 		})
 	})
 
@@ -837,7 +1304,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -891,12 +1358,10 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("process span is ended on drop", func(ctx context.Context) {
-			subCtx, cancel := context.WithCancel(ctx)
-
-			sub, err := manager.EnsureConsumer(subCtx, "events")
+			consumer, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.Subscribe(subCtx, "events", sub.Name())
+			sub, err := manager.Subscribe(ctx, "events", consumer.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -904,10 +1369,10 @@ var _ = Describe("Event Consumption", func() {
 
 			// Give the message time to be delivered to the subscription's
 			// handler, where it blocks on the channel send because nothing
-			// consumes the channel. Then cancel so the event is dropped
-			// before delivery (context-canceled drop path).
+			// consumes the channel. Then Stop so the event is dropped
+			// before delivery (closed-before-delivery drop path).
 			time.Sleep(150 * time.Millisecond)
-			cancel()
+			sub.Stop()
 
 			Eventually(func() tracetest.SpanStubs {
 				return exporter.GetSpans()
@@ -933,7 +1398,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := client.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := client.Subscribe(ctx, "events", sub.Name())
+			ec, err := subscribe(client, ctx, "events", sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = client.Publish(ctx, "events.test", &emptypb.Empty{})

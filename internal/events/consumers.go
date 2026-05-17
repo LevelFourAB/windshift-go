@@ -26,7 +26,7 @@ func (c *Consumer) Name() string {
 	return c.name
 }
 
-func (c *Consumer) Subscribe(ctx context.Context, opts ...events.SubscribeOption) (<-chan events.Event, error) {
+func (c *Consumer) Subscribe(ctx context.Context, opts ...events.SubscribeOption) (events.Subscription, error) {
 	return c.client.Subscribe(ctx, c.stream, c.name, opts...)
 }
 
