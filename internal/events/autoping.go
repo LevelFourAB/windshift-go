@@ -36,7 +36,7 @@ type AutoPing struct {
 	// entry is present exactly while the event should keep being pinged;
 	// Remove deletes it to cancel, and run() treats a missing entry as
 	// "canceled" and stops requeuing.
-	entries map[uint]uint
+	entries map[uint]uint64
 }
 
 func newAutoPing(ctx context.Context, logger *slog.Logger, pingInterval time.Duration) *AutoPing {
@@ -44,7 +44,7 @@ func newAutoPing(ctx context.Context, logger *slog.Logger, pingInterval time.Dur
 		logger:       logger,
 		queue:        queues.NewDelayQueue[pingItem](ctx),
 		pingInterval: pingInterval,
-		entries:      make(map[uint]uint),
+		entries:      make(map[uint]uint64),
 	}
 
 	go res.run(ctx)

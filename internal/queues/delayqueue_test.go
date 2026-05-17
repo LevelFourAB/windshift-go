@@ -179,7 +179,7 @@ var _ = Describe("DelayQueue", func() {
 		// Start goroutines that add items concurrently. Each goroutine writes
 		// only its own slot, and the WaitGroup establishes a happens-before
 		// edge so the removers below can read the ids without a data race.
-		ids := make([]uint, 100)
+		ids := make([]uint64, 100)
 		var addWg sync.WaitGroup
 		addWg.Add(100)
 		for i := 0; i < 100; i++ {
@@ -328,11 +328,62 @@ var _ = Describe("DelayQueue", func() {
 		Expect(time.Since(start)).To(BeNumerically("~", 100*time.Millisecond, 50*time.Millisecond))
 	})
 
+	It("should remove a middle item without disturbing the others", func(ctx context.Context) {
+		// Removing a non-head, non-tail item exercises heap.Remove via the
+		// item's tracked index plus the sift-down/up that reorders the heap.
+		// The remaining items must still come out in delay order.
+		dq := queues.NewDelayQueue[string](ctx)
+
+		dq.Add("first", 100*time.Millisecond)
+		idMiddle := dq.Add("middle", 200*time.Millisecond)
+		dq.Add("last", 300*time.Millisecond)
+
+		Expect(dq.Remove(idMiddle)).To(BeTrue())
+
+		Expect(<-dq.Items).To(Equal("first"))
+		Expect(<-dq.Items).To(Equal("last"))
+	})
+
+	It("should return false when removing an item that was already delivered", func(ctx context.Context) {
+		// When run() pops an item for delivery it must also drop it from the
+		// id index, so a later Remove of that id reports false rather than
+		// silently matching a recycled or unrelated entry.
+		dq := queues.NewDelayQueue[string](ctx)
+
+		id1 := dq.Add("item1", 10*time.Millisecond)
+		dq.Add("item2", 1*time.Hour)
+
+		Expect(<-dq.Items).To(Equal("item1"))
+
+		Expect(dq.Remove(id1)).To(BeFalse())
+	})
+
+	It("should remove exactly the requested items and leave the rest intact", func(ctx context.Context) {
+		// Stresses the id index staying consistent with the heap across many
+		// interleaved removals: every even-indexed item is removed by id, so
+		// exactly the odd-indexed items must be delivered, in delay order.
+		dq := queues.NewDelayQueue[int](ctx)
+
+		const itemCount = 200
+		ids := make([]uint64, itemCount)
+		for i := 0; i < itemCount; i++ {
+			ids[i] = dq.Add(i, time.Duration(i+1)*time.Millisecond)
+		}
+
+		for i := 0; i < itemCount; i += 2 {
+			Expect(dq.Remove(ids[i])).To(BeTrue(), "even item should still be removable")
+		}
+
+		for i := 1; i < itemCount; i += 2 {
+			Expect(<-dq.Items).To(Equal(i))
+		}
+	})
+
 	It("should handle ID generation correctly even with many items", func(ctx context.Context) {
 		dq := queues.NewDelayQueue[string](ctx)
 
 		// Add and immediately remove many items to increase nextID
-		ids := make(map[uint]bool)
+		ids := make(map[uint64]bool)
 		for i := 0; i < 10000; i++ {
 			id := dq.Add(strconv.Itoa(i), 1*time.Hour) // Long delay so they don't get delivered
 			Expect(ids[id]).To(BeFalse(), "IDs should be unique")

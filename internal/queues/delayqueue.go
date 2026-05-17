@@ -11,7 +11,7 @@ type delayedItem[T any] struct {
 	value   T
 	readyAt time.Time
 	index   int
-	id      uint
+	id      uint64
 }
 
 type timePriorityQueue[T any] []*delayedItem[T]
@@ -50,7 +50,12 @@ type DelayQueue[T any] struct {
 	pq       timePriorityQueue[T]
 	mu       sync.Mutex
 	wakeChan chan struct{}
-	nextID   uint
+	nextID   uint64
+	// byID maps an item id to its heap entry so Remove is O(1) instead of
+	// scanning the whole heap under the lock. It is kept in sync with pq:
+	// every item in the heap has an entry here, and items are deleted both
+	// when removed and when popped for delivery in run().
+	byID map[uint64]*delayedItem[T]
 
 	Items <-chan T
 }
@@ -65,6 +70,7 @@ func NewDelayQueue[T any](ctx context.Context) *DelayQueue[T] {
 		// An unbuffered channel would drop the non-blocking send in that
 		// window, losing the wakeup entirely.
 		wakeChan: make(chan struct{}, 1),
+		byID:     make(map[uint64]*delayedItem[T]),
 		Items:    itemsChan,
 	}
 	heap.Init(&res.pq)
@@ -73,7 +79,7 @@ func NewDelayQueue[T any](ctx context.Context) *DelayQueue[T] {
 	return res
 }
 
-func (dq *DelayQueue[T]) Add(value T, delay time.Duration) uint {
+func (dq *DelayQueue[T]) Add(value T, delay time.Duration) uint64 {
 	readyAt := time.Now().Add(delay)
 
 	dq.mu.Lock()
@@ -87,6 +93,7 @@ func (dq *DelayQueue[T]) Add(value T, delay time.Duration) uint {
 	dq.nextID++
 
 	heap.Push(&dq.pq, item)
+	dq.byID[item.id] = item
 	if dq.pq[0] == item {
 		// If this is the new earliest item, wake up the queue if we can
 		select {
@@ -98,29 +105,29 @@ func (dq *DelayQueue[T]) Add(value T, delay time.Duration) uint {
 	return item.id
 }
 
-func (dq *DelayQueue[T]) Remove(id uint) bool {
+func (dq *DelayQueue[T]) Remove(id uint64) bool {
 	dq.mu.Lock()
 	defer dq.mu.Unlock()
 
-	for i, item := range dq.pq {
-		if item.id == id {
-			wasFirst := i == 0
-			heap.Remove(&dq.pq, i)
+	item, ok := dq.byID[id]
+	if !ok {
+		return false
+	}
 
-			// If we removed the earliest item and there are still items left,
-			// wake the queue so it recalculates the timer for the new earliest item
-			if wasFirst && dq.pq.Len() > 0 {
-				select {
-				case dq.wakeChan <- struct{}{}:
-				default:
-				}
-			}
+	wasFirst := item.index == 0
+	heap.Remove(&dq.pq, item.index)
+	delete(dq.byID, id)
 
-			return true
+	// If we removed the earliest item and there are still items left,
+	// wake the queue so it recalculates the timer for the new earliest item
+	if wasFirst && dq.pq.Len() > 0 {
+		select {
+		case dq.wakeChan <- struct{}{}:
+		default:
 		}
 	}
 
-	return false
+	return true
 }
 
 func (dq *DelayQueue[T]) run(ctx context.Context, itemsChan chan<- T) {
@@ -155,6 +162,7 @@ func (dq *DelayQueue[T]) run(ctx context.Context, itemsChan chan<- T) {
 		now := time.Now()
 		if now.After(item.readyAt) {
 			heap.Pop(&dq.pq)
+			delete(dq.byID, item.id)
 			dq.mu.Unlock()
 
 			select {
