@@ -2,13 +2,16 @@ package events_test
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
+	"github.com/levelfourab/windshift-go/delays"
 	"github.com/levelfourab/windshift-go/events"
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/levelfourab/windshift-go/events/subscribe"
+	"github.com/nats-io/nats.go/jetstream"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -428,6 +431,48 @@ var _ = Describe("Event Consumption", func() {
 			case <-time.After(200 * time.Millisecond):
 				Fail("no event received")
 			}
+		})
+
+		It("rejecting an already-finalized event returns promptly without retrying", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events",
+				consumers.WithName("test"),
+				consumers.WithProcessingTimeout(time.Second),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Use a long retry backoff so that, if Reject did not treat an
+			// already-finalized message as a permanent outcome, the second
+			// Reject would block on retries for several seconds before
+			// returning.
+			ec, err := manager.Subscribe(ctx, "events", "test",
+				subscribe.WithDefaultRetryBackoff(delays.Constant(5*time.Second)))
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var event events.Event
+			select {
+			case event = <-ec:
+				Expect(event).ToNot(BeNil())
+			case <-time.After(200 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			// First reject finalizes the message server-side.
+			Expect(event.Reject(ctx, events.Permanently())).ToNot(HaveOccurred())
+
+			// A second reject on the same event mirrors a retry after a
+			// client-side error on an already-successful reject. It must
+			// return promptly with the already-acked error rather than
+			// exhausting the retry backoff. The bounded context ensures a
+			// regression fails fast (returning a context error instead of
+			// the already-acked error) rather than retrying indefinitely.
+			rejectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			err = event.Reject(rejectCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, jetstream.ErrMsgAlreadyAckd)).To(BeTrue())
 		})
 
 		It("rejecting event redelivers it to another instance", func(ctx context.Context) {

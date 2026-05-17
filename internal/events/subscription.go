@@ -356,7 +356,13 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 			err = e.msg.Nak()
 		}
 
-		if err != nil {
+		if errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
+			// The message was already finalized, likely because a
+			// previous attempt succeeded server-side but errored
+			// client-side. Treat this as a permanent, successful reject.
+			e.span.RecordError(err)
+			return backoff.Permanent(fmt.Errorf("message already acked: %w", err))
+		} else if err != nil {
 			e.span.RecordError(err)
 			return fmt.Errorf("could not reject message: %w", err)
 		}
