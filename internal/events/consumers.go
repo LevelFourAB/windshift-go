@@ -194,6 +194,7 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 
 	// If the max delivery attempts is specified set it
 	if options.MaxDeliveryAttempts > 0 {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		config.MaxDeliver = int(options.MaxDeliveryAttempts)
 	}
 
@@ -222,6 +223,7 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 	}
 
 	if options.MaxPendingEvents > 0 {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		config.MaxAckPending = int(options.MaxPendingEvents)
 	}
 }

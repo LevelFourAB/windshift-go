@@ -27,8 +27,8 @@ import (
 // the many call sites that only consume events and never drive the
 // subscription's lifecycle. Tests that need to Drain or Stop call
 // Client.Subscribe directly to get the Subscription handle.
-func subscribe(c events.Client, ctx context.Context, stream, consumer string, opts ...events.SubscribeOption) (<-chan events.Event, error) {
-	sub, err := c.Subscribe(ctx, stream, consumer, opts...)
+func subscribe(c events.Client, ctx context.Context, consumer string, opts ...events.SubscribeOption) (<-chan events.Event, error) {
+	sub, err := c.Subscribe(ctx, "events", consumer, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = subscribe(manager, ctx, "events", sub.Name())
+			_, err = subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -58,7 +58,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			msg := structpb.NewStringValue("test")
@@ -87,7 +87,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			msg := structpb.NewStringValue("test")
@@ -119,10 +119,10 @@ var _ = Describe("Event Consumption", func() {
 			sub2, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := subscribe(manager, ctx, "events", sub1.Name())
+			ec1, err := subscribe(manager, ctx, sub1.Name())
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := subscribe(manager, ctx, "events", sub2.Name())
+			ec2, err := subscribe(manager, ctx, sub2.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(err).ToNot(HaveOccurred())
@@ -151,7 +151,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -168,7 +168,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events", events.WithConsumeFrom(events.AtStreamStart()))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			select {
@@ -185,7 +185,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = subscribe(manager, ctx, "events", "test")
+			_, err = subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -193,7 +193,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -219,10 +219,10 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := subscribe(manager, ctx, "events", "test")
+			ec1, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := subscribe(manager, ctx, "events", "test")
+			ec2, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 0; i < 10; i++ {
@@ -266,10 +266,10 @@ var _ = Describe("Event Consumption", func() {
 			_, err = manager.EnsureConsumer(ctx, "events", events.WithName("test2"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec1, err := subscribe(manager, ctx, "events", "test1")
+			ec1, err := subscribe(manager, ctx, "test1")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec2, err := subscribe(manager, ctx, "events", "test2")
+			ec2, err := subscribe(manager, ctx, "test2")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -329,7 +329,6 @@ var _ = Describe("Event Consumption", func() {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				//nolint:revive // draining until closed is the point
 				for range ec {
 				}
 			}()
@@ -356,7 +355,6 @@ var _ = Describe("Event Consumption", func() {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				//nolint:revive // draining until closed is the point
 				for range ec {
 				}
 			}()
@@ -390,7 +388,6 @@ var _ = Describe("Event Consumption", func() {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				//nolint:revive // draining until closed is the point
 				for range ec {
 				}
 			}()
@@ -409,7 +406,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -440,7 +437,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -485,7 +482,7 @@ var _ = Describe("Event Consumption", func() {
 			// already-finalized message as a permanent outcome, the second
 			// Reject would block on retries for several seconds before
 			// returning.
-			ec, err := subscribe(manager, ctx, "events", "test",
+			ec, err := subscribe(manager, ctx, "test",
 				events.WithDefaultRetryBackoff(delays.Constant(5*time.Second)))
 			Expect(err).ToNot(HaveOccurred())
 
@@ -543,7 +540,7 @@ var _ = Describe("Event Consumption", func() {
 			// redelivered to the second instance rather than back here.
 			sub1.Stop()
 
-			ec2, err := subscribe(manager, ctx, "events", "test")
+			ec2, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			err = event.Reject(ctx)
@@ -563,7 +560,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -594,7 +591,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -626,7 +623,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test")
+			ec, err := subscribe(manager, ctx, "test")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -658,7 +655,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test", events.WithAutoPingInterval(50*time.Millisecond))
+			ec, err := subscribe(manager, ctx, "test", events.WithAutoPingInterval(50*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -701,7 +698,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test",
+			ec, err := subscribe(manager, ctx, "test",
 				events.WithAutoPingInterval(25*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
@@ -776,7 +773,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test", events.WithoutAutoPing())
+			ec, err := subscribe(manager, ctx, "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -811,7 +808,7 @@ var _ = Describe("Event Consumption", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", "test", events.WithoutAutoPing())
+			ec, err := subscribe(manager, ctx, "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -1304,7 +1301,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(manager, ctx, "events", sub.Name())
+			ec, err := subscribe(manager, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -1398,7 +1395,7 @@ var _ = Describe("Event Consumption", func() {
 			sub, err := client.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := subscribe(client, ctx, "events", sub.Name())
+			ec, err := subscribe(client, ctx, sub.Name())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = client.Publish(ctx, "events.test", &emptypb.Empty{})

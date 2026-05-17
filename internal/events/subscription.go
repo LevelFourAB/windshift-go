@@ -138,9 +138,11 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		autoPing:         autoPing,
 	}
 
+	//nolint:gosec // user-provided configuration value, not attacker-controlled
+	prefetch := int(options.Prefetch)
 	consumeCtx, err := jsConsumer.Consume(func(msg jetstream.Msg) {
 		s.handleMsg(ctx, msg)
-	}, jetstream.PullMaxMessages(options.Prefetch))
+	}, jetstream.PullMaxMessages(prefetch))
 	if err != nil {
 		closeCancel()
 		return nil, fmt.Errorf("failed to create message subscription: %w", err)

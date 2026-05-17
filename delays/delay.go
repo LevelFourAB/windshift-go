@@ -59,6 +59,7 @@ func WithJitter(decider DelayDecider, jitter time.Duration) DelayDecider {
 
 		minInterval := math.Max(0, float64(delay-jitter))
 		maxInterval := float64(delay + jitter)
+		//nolint:gosec // retry jitter does not require a cryptographically secure RNG
 		return time.Duration(minInterval + rand.Float64()*(maxInterval-minInterval+1))
 	}
 }
@@ -79,6 +80,7 @@ func WithJitterFactor(decider DelayDecider, jitterScale float64) DelayDecider {
 
 		minInterval := float64(delay - jitter)
 		maxInterval := float64(delay + jitter)
+		//nolint:gosec // retry jitter does not require a cryptographically secure RNG
 		return time.Duration(minInterval + rand.Float64()*(maxInterval-minInterval+1))
 	}
 }

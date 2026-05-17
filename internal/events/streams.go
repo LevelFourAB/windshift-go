@@ -50,18 +50,21 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...events.S
 	if options.RetentionPolicy.MaxEvents == 0 {
 		streamConfig.MaxMsgs = -1
 	} else {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		streamConfig.MaxMsgs = int64(options.RetentionPolicy.MaxEvents)
 	}
 
 	if options.RetentionPolicy.MaxEventsPerSubject == 0 {
 		streamConfig.MaxMsgsPerSubject = -1
 	} else {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		streamConfig.MaxMsgsPerSubject = int64(options.RetentionPolicy.MaxEventsPerSubject)
 	}
 
 	if options.RetentionPolicy.MaxBytes == 0 {
 		streamConfig.MaxBytes = -1
 	} else {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		streamConfig.MaxBytes = int64(options.RetentionPolicy.MaxBytes)
 	}
 
@@ -91,6 +94,7 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...events.S
 	}
 
 	if options.Storage.Replicas > 0 {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		streamConfig.Replicas = int(options.Storage.Replicas)
 	} else {
 		streamConfig.Replicas = 1
@@ -134,6 +138,7 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...events.S
 	}
 
 	if options.MaxEventSize > 0 {
+		//nolint:gosec // user-provided configuration value, not attacker-controlled
 		streamConfig.MaxMsgSize = int32(options.MaxEventSize)
 	} else {
 		streamConfig.MaxMsgSize = -1
@@ -154,7 +159,7 @@ func toNatsStreamSource(source *events.StreamSource) (*jetstream.StreamSource, e
 		Name: source.Name,
 	}
 
-	if source.FilterSubjects != nil && len(source.FilterSubjects) > 0 {
+	if len(source.FilterSubjects) > 0 {
 		if len(source.FilterSubjects) > 1 {
 			return nil, errors.New("only one filter subject can be specified")
 		}
@@ -252,6 +257,7 @@ func newStream(jsStream jetstream.Stream) *stream {
 		res.storage.Type = events.StorageTypeMemory
 	}
 
+	//nolint:gosec // replica count from NATS is always non-negative
 	res.storage.Replicas = uint(info.Config.Replicas)
 
 	if info.Config.Mirror != nil {

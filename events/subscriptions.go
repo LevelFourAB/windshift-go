@@ -366,7 +366,7 @@ func (withDrainPrefetchedOption) applyToSubscribe(opts *SubscribeOptions) {
 // momentarily reach zero between two buffered events, allowing Drain to
 // return slightly early. No event is ever lost: any unsettled event is
 // redelivered once the processing timeout elapses. Without this option the
-// behaviour is exact, because once intake has been stopped no further events
+// behavior is exact, because once intake has been stopped no further events
 // are handled and the unsettled count only decreases.
 func WithDrainPrefetched() SubscribeOption {
 	return withDrainPrefetchedOption{}

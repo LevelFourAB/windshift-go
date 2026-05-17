@@ -19,7 +19,7 @@ func GetNATS() *nats.Conn {
 	tempDir, err := os.MkdirTemp("", "nats")
 	Expect(err).ToNot(HaveOccurred())
 	DeferCleanup(func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	})
 
 	ns, err := server.NewServer(&server.Options{
