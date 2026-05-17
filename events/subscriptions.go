@@ -99,7 +99,7 @@ type Headers interface {
 	// OccurredAt returns the time that the event occurred.
 	OccurredAt() time.Time
 
-	// IDempotencyKey returns the idempotency key of the event. Will be an
+	// IdempotencyKey returns the idempotency key of the event. Will be an
 	// empty string if the event was not published with an idempotency key.
 	IdempotencyKey() string
 }
@@ -238,4 +238,81 @@ func WithBackoff(decider delays.DelayDecider) CallOption {
 // WithNoRetry disables retrying an operation.
 func WithNoRetry() CallOption {
 	return backoffOption(delays.Never())
+}
+
+// SubscribeOptions contains resolved options for a subscription.
+type SubscribeOptions struct {
+	// Prefetch is the number of events to keep buffered locally and ready for
+	// processing. Maps to the pull consumer's max in-flight message buffer.
+	Prefetch uint
+
+	// CallRetryBackoff is the backoff strategy to use when acking, rejecting
+	// or pinging an event fails.
+	CallRetryBackoff delays.DelayDecider
+
+	// AutoPingInterval is the interval at which events should be pinged.
+	// Defaults to zero which will determine the ping interval based on the
+	// timeout of the consumer.
+	AutoPingInterval time.Duration
+}
+
+func (o *SubscribeOptions) Apply(opts []SubscribeOption) {
+	for _, opt := range opts {
+		opt.applyToSubscribe(o)
+	}
+}
+
+// SubscribeOption is an option for configuring a subscription.
+type SubscribeOption interface {
+	applyToSubscribe(*SubscribeOptions)
+}
+
+type prefetchOption uint
+
+func (o prefetchOption) applyToSubscribe(opts *SubscribeOptions) {
+	opts.Prefetch = uint(o)
+}
+
+// WithPrefetch sets the number of events to keep buffered locally and ready
+// for processing.
+//
+// If not set this defaults to 50.
+func WithPrefetch(n uint) SubscribeOption {
+	return prefetchOption(n)
+}
+
+type defaultRetryBackoffOption struct {
+	decider delays.DelayDecider
+}
+
+func (o defaultRetryBackoffOption) applyToSubscribe(opts *SubscribeOptions) {
+	opts.CallRetryBackoff = o.decider
+}
+
+// WithDefaultRetryBackoff sets the default backoff strategy to use when
+// acking, rejecting or pinging an event fails.
+func WithDefaultRetryBackoff(decider delays.DelayDecider) SubscribeOption {
+	return defaultRetryBackoffOption{decider: decider}
+}
+
+type withoutAutoPingOption struct{}
+
+func (withoutAutoPingOption) applyToSubscribe(opts *SubscribeOptions) {
+	opts.AutoPingInterval = -1
+}
+
+// WithoutAutoPing disables automatic pinging of events.
+func WithoutAutoPing() SubscribeOption {
+	return withoutAutoPingOption{}
+}
+
+type autoPingIntervalOption time.Duration
+
+func (o autoPingIntervalOption) applyToSubscribe(opts *SubscribeOptions) {
+	opts.AutoPingInterval = time.Duration(o)
+}
+
+// WithAutoPingInterval sets the interval at which events should be pinged.
+func WithAutoPingInterval(interval time.Duration) SubscribeOption {
+	return autoPingIntervalOption(interval)
 }

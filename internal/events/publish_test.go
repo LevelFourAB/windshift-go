@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/nats-io/nats.go/jetstream"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,7 +18,7 @@ var _ = Describe("Publish", func() {
 	BeforeEach(func() {
 		manager, js = createClientAndJetStream()
 
-		_, err := manager.EnsureStream(context.Background(), "test", streams.WithSubjects("test"))
+		_, err := manager.EnsureStream(context.Background(), "test", events.WithSubjects("test"))
 		Expect(err).ToNot(HaveOccurred())
 	})
 

@@ -9,9 +9,6 @@ import (
 
 	"github.com/levelfourab/windshift-go/delays"
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/consumers"
-	"github.com/levelfourab/windshift-go/events/streams"
-	"github.com/levelfourab/windshift-go/events/subscribe"
 	internalevents "github.com/levelfourab/windshift-go/internal/events"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
@@ -32,13 +29,13 @@ var _ = Describe("Event Consumption", func() {
 	BeforeEach(func() {
 		manager, _ = createClientAndJetStream()
 
-		_, err := manager.EnsureStream(context.Background(), "events", streams.WithSubjects("events.>"))
+		_, err := manager.EnsureStream(context.Background(), "events", events.WithSubjects("events.>"))
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	Describe("Ephemeral consumption", func() {
 		It("can create", func(ctx context.Context) {
-			sub, err := manager.EnsureConsumer(ctx, "events", consumers.WithSubjects("events.>"))
+			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Subscribe(ctx, "events", sub.Name())
@@ -46,7 +43,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("can receive events with subject specified", func(ctx context.Context) {
-			sub, err := manager.EnsureConsumer(ctx, "events", consumers.WithSubjects("events.>"))
+			sub, err := manager.EnsureConsumer(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", sub.Name())
@@ -156,7 +153,7 @@ var _ = Describe("Event Consumption", func() {
 			_, err := manager.Publish(ctx, "events.test", &emptypb.Empty{})
 			Expect(err).ToNot(HaveOccurred())
 
-			sub, err := manager.EnsureConsumer(ctx, "events", consumers.WithConsumeFrom(streams.AtStreamStart()))
+			sub, err := manager.EnsureConsumer(ctx, "events", events.WithConsumeFrom(events.AtStreamStart()))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", sub.Name())
@@ -173,7 +170,7 @@ var _ = Describe("Event Consumption", func() {
 
 	Describe("Durable consumption", func() {
 		It("can create", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Subscribe(ctx, "events", "test")
@@ -181,7 +178,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("can receive events", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", "test")
@@ -207,7 +204,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("can receive events with multiple subscribers with same name", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec1, err := manager.Subscribe(ctx, "events", "test")
@@ -251,10 +248,10 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("multiple subscribers with different names receive same events", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test1"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test1"))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = manager.EnsureConsumer(ctx, "events", consumers.WithName("test2"))
+			_, err = manager.EnsureConsumer(ctx, "events", events.WithName("test2"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec1, err := manager.Subscribe(ctx, "events", "test1")
@@ -282,7 +279,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("canceling context stops receiving events", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ctx1, cancel1 := context.WithCancel(ctx)
@@ -306,7 +303,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("canceling context closes the channel", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ctx1, cancel1 := context.WithCancel(ctx)
@@ -333,7 +330,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("canceling context while a send is blocked closes the channel without panicking", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ctx1, cancel1 := context.WithCancel(ctx)
@@ -368,8 +365,8 @@ var _ = Describe("Event Consumption", func() {
 
 		It("acknowledging event stops delivery", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(100*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(100*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -399,8 +396,8 @@ var _ = Describe("Event Consumption", func() {
 
 		It("rejecting event redelivers it", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(100*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(100*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -440,8 +437,8 @@ var _ = Describe("Event Consumption", func() {
 
 		It("rejecting an already-finalized event returns promptly without retrying", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(time.Second),
+				events.WithName("test"),
+				events.WithProcessingTimeout(time.Second),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -450,7 +447,7 @@ var _ = Describe("Event Consumption", func() {
 			// Reject would block on retries for several seconds before
 			// returning.
 			ec, err := manager.Subscribe(ctx, "events", "test",
-				subscribe.WithDefaultRetryBackoff(delays.Constant(5*time.Second)))
+				events.WithDefaultRetryBackoff(delays.Constant(5*time.Second)))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -482,8 +479,8 @@ var _ = Describe("Event Consumption", func() {
 
 		It("rejecting event redelivers it to another instance", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(100*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(100*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -522,7 +519,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("can reject with a delay", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", "test")
@@ -553,7 +550,7 @@ var _ = Describe("Event Consumption", func() {
 		})
 
 		It("permanently rejecting event does not redeliver it", func(ctx context.Context) {
-			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			_, err := manager.EnsureConsumer(ctx, "events", events.WithName("test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", "test")
@@ -583,8 +580,8 @@ var _ = Describe("Event Consumption", func() {
 
 		It("event gets permanently rejected after max deliveries is reached", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithMaxDeliveryAttempts(1),
+				events.WithName("test"),
+				events.WithMaxDeliveryAttempts(1),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -615,12 +612,12 @@ var _ = Describe("Event Consumption", func() {
 
 		It("events are automatically pinged", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(200*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(200*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.WithAutoPingInterval(50*time.Millisecond))
+			ec, err := manager.Subscribe(ctx, "events", "test", events.WithAutoPingInterval(50*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -658,13 +655,13 @@ var _ = Describe("Event Consumption", func() {
 			const eventCount = 15
 
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(300*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(300*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
 			ec, err := manager.Subscribe(ctx, "events", "test",
-				subscribe.WithAutoPingInterval(25*time.Millisecond))
+				events.WithAutoPingInterval(25*time.Millisecond))
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 0; i < eventCount; i++ {
@@ -733,12 +730,12 @@ var _ = Describe("Event Consumption", func() {
 
 		It("can manually ping events to extend their processing time", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(200*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(200*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
+			ec, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -768,12 +765,12 @@ var _ = Describe("Event Consumption", func() {
 
 		It("not processing event redelivers it when auto-ping is disabled", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
-				consumers.WithName("test"),
-				consumers.WithProcessingTimeout(100*time.Millisecond),
+				events.WithName("test"),
+				events.WithProcessingTimeout(100*time.Millisecond),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			ec, err := manager.Subscribe(ctx, "events", "test", subscribe.DisableAutoPing())
+			ec, err := manager.Subscribe(ctx, "events", "test", events.WithoutAutoPing())
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
@@ -930,7 +927,7 @@ var _ = Describe("Event Consumption", func() {
 			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
 			client := internalevents.New(js, logger)
 
-			_, err = client.EnsureStream(ctx, "events", streams.WithSubjects("events.>"))
+			_, err = client.EnsureStream(ctx, "events", events.WithSubjects("events.>"))
 			Expect(err).ToNot(HaveOccurred())
 
 			sub, err := client.EnsureConsumer(ctx, "events")

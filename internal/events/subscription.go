@@ -10,7 +10,6 @@ import (
 
 	"github.com/levelfourab/windshift-go/delays"
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/subscribe"
 	"github.com/levelfourab/windshift-go/internal/backoff"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/codes"
@@ -46,7 +45,7 @@ type subscription struct {
 	autoPing *AutoPing
 }
 
-func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...subscribe.Option) (<-chan events.Event, error) {
+func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, opts ...events.SubscribeOption) (<-chan events.Event, error) {
 	ctx, span := c.tracer.Start(
 		ctx,
 		stream+" subscribe",
@@ -65,8 +64,8 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 		return nil, events.NewValidationError("invalid consumer name: " + consumer)
 	}
 
-	options := &subscribe.Options{
-		MaxPendingEvents: 50,
+	options := &events.SubscribeOptions{
+		Prefetch:         50,
 		CallRetryBackoff: defaultEventBackoff,
 	}
 	options.Apply(opts)
@@ -91,7 +90,7 @@ func (c *Client) Subscribe(ctx context.Context, stream string, consumer string, 
 
 	consumeCtx, err := jsConsumer.Consume(func(msg jetstream.Msg) {
 		s.handleMsg(ctx, msg)
-	}, jetstream.PullMaxMessages(options.MaxPendingEvents))
+	}, jetstream.PullMaxMessages(options.Prefetch))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message subscription: %w", err)
 	}

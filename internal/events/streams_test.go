@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/nats-io/nats.go/jetstream"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,7 +20,7 @@ var _ = Describe("Streams", func() {
 	})
 
 	It("stream can not have invalid name", func(ctx context.Context) {
-		_, err := manager.EnsureStream(ctx, "invalid name", streams.WithSubjects("test"))
+		_, err := manager.EnsureStream(ctx, "invalid name", events.WithSubjects("test"))
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -31,10 +30,10 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.Name()).To(Equal("test"))
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test"},
 				}))
 
@@ -48,15 +47,15 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test"},
 				}))
 
-				stream, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test2"))
+				stream, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test2"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test2"},
 				}))
 
@@ -71,9 +70,9 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test", "test.*"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test", "test.*"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test", "test.*"},
 				}))
 
@@ -88,15 +87,15 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test", "test.*"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test", "test.*"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test", "test.*"},
 				}))
 
-				stream, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test"},
 				}))
 
@@ -110,15 +109,15 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test"},
 				}))
 
-				stream, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test", "test.*"))
+				stream, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test", "test.*"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test", "test.*"},
 				}))
 
@@ -132,10 +131,10 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test", "test.1.*", "test.2.*"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test", "test.1.*", "test.2.*"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.Name()).To(Equal("test"))
-				Expect(stream.Source()).To(Equal(&streams.DataSourceSubjects{
+				Expect(stream.Source()).To(Equal(&events.DataSourceSubjects{
 					Subjects: []string{"test", "test.1.*", "test.2.*"},
 				}))
 
@@ -152,14 +151,14 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test2", streams.AggregateStreams(streams.CopyFromStream("test")))
+				stream, err := manager.EnsureStream(ctx, "test2", events.AggregateStreams(events.CopyFromStream("test")))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceAggregate{
-					Sources: []*streams.StreamSource{
-						streams.CopyFromStream("test"),
+				Expect(stream.Source()).To(Equal(&events.DataSourceAggregate{
+					Sources: []*events.StreamSource{
+						events.CopyFromStream("test"),
 					},
 				}))
 
@@ -173,21 +172,21 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test1", streams.WithSubjects("test1"))
+				_, err = manager.EnsureStream(ctx, "test1", events.WithSubjects("test1"))
 				Expect(err).ToNot(HaveOccurred())
 
-				_, err = manager.EnsureStream(ctx, "test2", streams.WithSubjects("test2"))
+				_, err = manager.EnsureStream(ctx, "test2", events.WithSubjects("test2"))
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test3", streams.AggregateStreams(
-					streams.CopyFromStream("test1"),
-					streams.CopyFromStream("test2"),
+				stream, err := manager.EnsureStream(ctx, "test3", events.AggregateStreams(
+					events.CopyFromStream("test1"),
+					events.CopyFromStream("test2"),
 				))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Source()).To(Equal(&streams.DataSourceAggregate{
-					Sources: []*streams.StreamSource{
-						streams.CopyFromStream("test1"),
-						streams.CopyFromStream("test2"),
+				Expect(stream.Source()).To(Equal(&events.DataSourceAggregate{
+					Sources: []*events.StreamSource{
+						events.CopyFromStream("test1"),
+						events.CopyFromStream("test2"),
 					},
 				}))
 
@@ -202,13 +201,13 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
 				Expect(err).ToNot(HaveOccurred())
 
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(streams.CopyFromStream("test")))
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(events.CopyFromStream("test")))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := js.Stream(ctx, "test2")
@@ -230,10 +229,10 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(streams.CopyFromStream("test")))
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(events.CopyFromStream("test")))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := js.Stream(ctx, "test2")
@@ -260,7 +259,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				// Create the source stream
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a few messages to the source stream
@@ -270,8 +269,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(
-					streams.CopyFromStreamAt("test", streams.AtStreamOffset(e.ID())),
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(
+					events.CopyFromStreamAt("test", events.AtStreamOffset(e.ID())),
 				))
 				Expect(err).ToNot(HaveOccurred())
 
@@ -295,7 +294,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				// Create the source stream
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a few messages to the source stream
@@ -309,8 +308,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(
-					streams.CopyFromStreamAt("test", streams.AtStreamTimestamp(now)),
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(
+					events.CopyFromStreamAt("test", events.AtStreamTimestamp(now)),
 				))
 				Expect(err).ToNot(HaveOccurred())
 
@@ -334,7 +333,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				// Create the source stream
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a message to the source stream
@@ -342,8 +341,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(
-					streams.CopyFromStreamAt("test", streams.AtStreamStart()),
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(
+					events.CopyFromStreamAt("test", events.AtStreamStart()),
 				))
 				Expect(err).ToNot(HaveOccurred())
 
@@ -367,7 +366,7 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				// Create the source stream
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Publish a message to the source stream
@@ -375,8 +374,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create the stream with the source
-				_, err = manager.EnsureStream(ctx, "test2", streams.AggregateStreams(
-					streams.CopyFromStreamAt("test", streams.AtStreamEnd()),
+				_, err = manager.EnsureStream(ctx, "test2", events.AggregateStreams(
+					events.CopyFromStreamAt("test", events.AtStreamEnd()),
 				))
 				Expect(err).ToNot(HaveOccurred())
 
@@ -394,8 +393,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -410,12 +409,12 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -431,14 +430,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(2*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(2*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(2 * time.Hour))
@@ -454,12 +453,12 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(0 * time.Second))
 
@@ -473,8 +472,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(100)))
@@ -489,12 +488,12 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(100)))
@@ -511,14 +510,14 @@ var _ = Describe("Streams", func() {
 
 				_, err = manager.EnsureStream(ctx, "test",
 
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(200),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(200),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(200)))
@@ -534,12 +533,12 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(0)))
 
@@ -553,8 +552,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(100)))
@@ -569,12 +568,12 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(100)))
@@ -590,14 +589,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(200),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(200),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(200)))
@@ -613,12 +612,12 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(0)))
 
@@ -632,9 +631,9 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -652,16 +651,16 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(2*time.Hour),
-					streams.WithMaxEvents(200),
+					events.WithSubjects("test"),
+					events.WithMaxAge(2*time.Hour),
+					events.WithMaxEvents(200),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(2 * time.Hour))
@@ -678,13 +677,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(0 * time.Second))
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(0)))
@@ -700,15 +699,15 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -725,14 +724,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(0 * time.Second))
@@ -749,9 +748,9 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -768,16 +767,16 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(2*time.Hour),
-					streams.WithMaxBytes(200),
+					events.WithSubjects("test"),
+					events.WithMaxAge(2*time.Hour),
+					events.WithMaxBytes(200),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(2 * time.Hour))
@@ -794,13 +793,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(0 * time.Second))
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(0)))
@@ -816,15 +815,15 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(1 * time.Hour))
@@ -841,14 +840,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxAge(1*time.Hour),
+					events.WithSubjects("test"),
+					events.WithMaxAge(1*time.Hour),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxAge).To(Equal(0 * time.Second))
@@ -865,9 +864,9 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(100)))
@@ -884,16 +883,16 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(200),
-					streams.WithMaxBytes(200),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(200),
+					events.WithMaxBytes(200),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(200)))
@@ -910,13 +909,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(0)))
 				Expect(stream.RetentionPolicy().MaxBytes).To(Equal(uint(0)))
@@ -932,15 +931,15 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEvents(100),
-					streams.WithMaxBytes(100),
+					events.WithSubjects("test"),
+					events.WithMaxEvents(100),
+					events.WithMaxBytes(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.RetentionPolicy().MaxEvents).To(Equal(uint(100)))
@@ -958,9 +957,9 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(streams.DiscardPolicyOld))
+				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(events.DiscardPolicyOld))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -972,11 +971,11 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyOld),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyOld),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(streams.DiscardPolicyOld))
+				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(events.DiscardPolicyOld))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -988,11 +987,11 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyNew),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyNew),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(streams.DiscardPolicyNew))
+				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(events.DiscardPolicyNew))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -1004,13 +1003,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyNew),
-					streams.WithDiscardNewPerSubject(true),
-					streams.WithMaxEventsPerSubject(100),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyNew),
+					events.WithDiscardNewPerSubject(true),
+					events.WithMaxEventsPerSubject(100),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(streams.DiscardPolicyNew))
+				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(events.DiscardPolicyNew))
 				Expect(stream.RetentionPolicy().DiscardNewPerSubject).To(BeTrue())
 
 				createdStream, err := js.Stream(ctx, "test")
@@ -1024,17 +1023,17 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyNew),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyNew),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyOld),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyOld),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(streams.DiscardPolicyOld))
+				Expect(stream.RetentionPolicy().DiscardPolicy).To(Equal(events.DiscardPolicyOld))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -1046,9 +1045,9 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDiscardPolicy(streams.DiscardPolicyNew),
-					streams.WithDiscardNewPerSubject(true),
+					events.WithSubjects("test"),
+					events.WithDiscardPolicy(events.DiscardPolicyNew),
+					events.WithDiscardNewPerSubject(true),
 				)
 				Expect(err).To(HaveOccurred())
 			})
@@ -1059,7 +1058,7 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.DeduplicationWindow()).To(Equal(2 * time.Minute))
 
@@ -1073,8 +1072,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDeduplicationWindow(1*time.Minute),
+					events.WithSubjects("test"),
+					events.WithDeduplicationWindow(1*time.Minute),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.DeduplicationWindow()).To(Equal(1 * time.Minute))
@@ -1089,14 +1088,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDeduplicationWindow(1*time.Minute),
+					events.WithSubjects("test"),
+					events.WithDeduplicationWindow(1*time.Minute),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithDeduplicationWindow(2*time.Minute),
+					events.WithSubjects("test"),
+					events.WithDeduplicationWindow(2*time.Minute),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.DeduplicationWindow()).To(Equal(2 * time.Minute))
@@ -1112,7 +1111,7 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.MaxEventSize()).To(Equal(uint(0)))
 
@@ -1126,8 +1125,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEventSize(2*1024*1024),
+					events.WithSubjects("test"),
+					events.WithMaxEventSize(2*1024*1024),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.MaxEventSize()).To(Equal(uint(2 * 1024 * 1024)))
@@ -1142,13 +1141,13 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
+					events.WithSubjects("test"),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEventSize(2*1024*1024),
+					events.WithSubjects("test"),
+					events.WithMaxEventSize(2*1024*1024),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.MaxEventSize()).To(Equal(uint(2 * 1024 * 1024)))
@@ -1163,14 +1162,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEventSize(2*1024*1024),
+					events.WithSubjects("test"),
+					events.WithMaxEventSize(2*1024*1024),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEventSize(4*1024*1024),
+					events.WithSubjects("test"),
+					events.WithMaxEventSize(4*1024*1024),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.MaxEventSize()).To(Equal(uint(4 * 1024 * 1024)))
@@ -1185,12 +1184,12 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithMaxEventSize(2*1024*1024),
+					events.WithSubjects("test"),
+					events.WithMaxEventSize(2*1024*1024),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.MaxEventSize()).To(Equal(uint(0)))
 
@@ -1205,9 +1204,9 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				stream, err := manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				stream, err := manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Storage().Type).To(Equal(streams.StorageTypeFile))
+				Expect(stream.Storage().Type).To(Equal(events.StorageTypeFile))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -1219,11 +1218,11 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageType(streams.StorageTypeFile),
+					events.WithSubjects("test"),
+					events.WithStorageType(events.StorageTypeFile),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Storage().Type).To(Equal(streams.StorageTypeFile))
+				Expect(stream.Storage().Type).To(Equal(events.StorageTypeFile))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -1235,11 +1234,11 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageType(streams.StorageTypeMemory),
+					events.WithSubjects("test"),
+					events.WithStorageType(events.StorageTypeMemory),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(stream.Storage().Type).To(Equal(streams.StorageTypeMemory))
+				Expect(stream.Storage().Type).To(Equal(events.StorageTypeMemory))
 
 				createdStream, err := js.Stream(ctx, "test")
 				Expect(err).ToNot(HaveOccurred())
@@ -1251,14 +1250,14 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageType(streams.StorageTypeMemory),
+					events.WithSubjects("test"),
+					events.WithStorageType(events.StorageTypeMemory),
 				)
 				Expect(err).ToNot(HaveOccurred())
 
 				_, err = manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageType(streams.StorageTypeFile),
+					events.WithSubjects("test"),
+					events.WithStorageType(events.StorageTypeFile),
 				)
 				Expect(err).To(HaveOccurred())
 			})
@@ -1267,7 +1266,7 @@ var _ = Describe("Streams", func() {
 				_, err := js.Stream(ctx, "test")
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
-				_, err = manager.EnsureStream(ctx, "test", streams.WithSubjects("test"))
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
 				Expect(err).ToNot(HaveOccurred())
 
 				stream, err := js.Stream(ctx, "test")
@@ -1280,8 +1279,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageReplicas(0),
+					events.WithSubjects("test"),
+					events.WithStorageReplicas(0),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.Storage().Replicas).To(Equal(uint(1)))
@@ -1296,8 +1295,8 @@ var _ = Describe("Streams", func() {
 				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
 
 				stream, err := manager.EnsureStream(ctx, "test",
-					streams.WithSubjects("test"),
-					streams.WithStorageReplicas(1),
+					events.WithSubjects("test"),
+					events.WithStorageReplicas(1),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(stream.Storage().Replicas).To(Equal(uint(1)))

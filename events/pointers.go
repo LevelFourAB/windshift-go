@@ -1,4 +1,4 @@
-package streams
+package events
 
 import (
 	"time"

@@ -3,9 +3,6 @@ package events
 import (
 	"context"
 
-	"github.com/levelfourab/windshift-go/events/consumers"
-	"github.com/levelfourab/windshift-go/events/streams"
-	"github.com/levelfourab/windshift-go/events/subscribe"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -15,7 +12,7 @@ type Client interface {
 	//
 	// Streams are collections of events that can later be consumed, they can
 	// source events from subjects and other streams.
-	EnsureStream(ctx context.Context, name string, opts ...streams.Option) (streams.Stream, error)
+	EnsureStream(ctx context.Context, name string, opts ...StreamOption) (Stream, error)
 
 	// Publish an event to a stream. Subject and data are required.
 	//
@@ -35,7 +32,7 @@ type Client interface {
 	// are two types of consumers, durable and ephemeral.
 	//
 	// Durable consumers are created when a name is provided via
-	// [consumers.WithName]. Durable consumers can be subscribed to by several
+	// [WithName]. Durable consumers can be subscribed to by several
 	// clients to distribute the load of processing events.
 	//
 	// Ephemeral consumers are created when no name is provided. An ephemeral
@@ -45,14 +42,14 @@ type Client interface {
 	// automatically deleted.
 	//
 	// Filtering of what subjects a consumer should receive events from can be
-	// done via [consumers.WithSubjects].
+	// done via [WithSubjects].
 	//
-	// [consumers.WithConsumeFrom] can be used to control which events the
+	// [WithConsumeFrom] can be used to control which events the
 	// consumer should receive, such as starting from the beginning of the stream
 	// or from a specific event id.
 	//
 	// To subscribe to the events from a consumer, use [Client.Subscribe].
-	EnsureConsumer(ctx context.Context, stream string, opts ...consumers.Option) (consumers.Consumer, error)
+	EnsureConsumer(ctx context.Context, stream string, opts ...ConsumerOption) (Consumer, error)
 
 	// Subscribe starts consuming events from the given stream. The consumer
 	// must have been created before calling this method, use [Client.EnsureConsumer]
@@ -62,7 +59,6 @@ type Client interface {
 	// context is canceled the returned channel is closed once delivery has
 	// stopped, so ranging over it will terminate.
 	//
-	// To control the number of events that can be processed concurrently, use
-	// [subscribe.MaxProcessingEvents].
-	Subscribe(ctx context.Context, stream string, consumer string, opts ...subscribe.Option) (<-chan Event, error)
+	// To control the number of events buffered locally use [WithPrefetch].
+	Subscribe(ctx context.Context, stream string, consumer string, opts ...SubscribeOption) (<-chan Event, error)
 }

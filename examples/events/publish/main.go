@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go"
-	"github.com/levelfourab/windshift-go/events/streams"
+	"github.com/levelfourab/windshift-go/events"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -31,7 +31,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, err = eventsClient.EnsureStream(context.Background(), "test", streams.WithSubjects("test"))
+	_, err = eventsClient.EnsureStream(context.Background(), "test", events.WithSubjects("test"))
 	if err != nil {
 		log.Fatal(err)
 	}

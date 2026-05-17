@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/consumers"
-	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -19,19 +17,23 @@ import (
 )
 
 type Consumer struct {
-	name string
+	client *Client
+	stream string
+	name   string
 }
 
 func (c *Consumer) Name() string {
 	return c.name
 }
 
-func (c *Client) EnsureConsumer(ctx context.Context, stream string, opts ...consumers.Option) (consumers.Consumer, error) {
-	var resolvedOpts *consumers.Options = &consumers.Options{}
-	for _, opt := range opts {
-		if err := opt(resolvedOpts); err != nil {
-			return nil, err
-		}
+func (c *Consumer) Subscribe(ctx context.Context, opts ...events.SubscribeOption) (<-chan events.Event, error) {
+	return c.client.Subscribe(ctx, c.stream, c.name, opts...)
+}
+
+func (c *Client) EnsureConsumer(ctx context.Context, stream string, opts ...events.ConsumerOption) (events.Consumer, error) {
+	resolvedOpts := &events.ConsumerOptions{}
+	if err := resolvedOpts.Apply(opts); err != nil {
+		return nil, err
 	}
 
 	if strings.TrimSpace(stream) == "" {
@@ -41,7 +43,7 @@ func (c *Client) EnsureConsumer(ctx context.Context, stream string, opts ...cons
 	return c.ensureConsumer(ctx, stream, resolvedOpts)
 }
 
-func (c *Client) ensureConsumer(ctx context.Context, stream string, resolvedOpts *consumers.Options) (consumers.Consumer, error) {
+func (c *Client) ensureConsumer(ctx context.Context, stream string, resolvedOpts *events.ConsumerOptions) (events.Consumer, error) {
 	ctx, span := c.tracer.Start(
 		ctx,
 		"windshift.events.EnsureConsumer",
@@ -97,14 +99,16 @@ func (c *Client) ensureConsumer(ctx context.Context, stream string, resolvedOpts
 	}
 
 	return &Consumer{
-		name: name,
+		client: c,
+		stream: stream,
+		name:   name,
 	}, nil
 }
 
 // declareEphemeralConsumer creates an ephemeral consumer. Ephemeral consumers
 // are automatically deleted when they have not been used for a period of time,
-// and are useful for one-off consumers.
-func (c *Client) declareEphemeralConsumer(ctx context.Context, stream string, options *consumers.Options) (string, error) {
+// and are useful for one-off events.
+func (c *Client) declareEphemeralConsumer(ctx context.Context, stream string, options *events.ConsumerOptions) (string, error) {
 	consumerConfig := &jetstream.ConsumerConfig{}
 
 	c.logger.Info(
@@ -124,7 +128,7 @@ func (c *Client) declareEphemeralConsumer(ctx context.Context, stream string, op
 // declareDurableConsumer creates a durable consumer. Durable consumers are
 // useful for long-running consumers that need to be able to resume event
 // processing.
-func (c *Client) declareDurableConsumer(ctx context.Context, stream string, options *consumers.Options) (string, error) {
+func (c *Client) declareDurableConsumer(ctx context.Context, stream string, options *events.ConsumerOptions) (string, error) {
 	consumer, err := c.js.Consumer(ctx, stream, options.Name)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrConsumerNotFound) {
@@ -172,8 +176,8 @@ func (c *Client) declareDurableConsumer(ctx context.Context, stream string, opti
 }
 
 // setConsumerSettings sets the shared settings for both ephemeral and durable
-// consumers.
-func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *consumers.Options, update bool) {
+// events.
+func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *events.ConsumerOptions, update bool) {
 	config.AckPolicy = jetstream.AckExplicitPolicy
 	if len(options.Subjects) == 1 {
 		config.FilterSubjects = options.Subjects
@@ -198,15 +202,15 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 		config.DeliverPolicy = jetstream.DeliverNewPolicy
 		if options.From != nil {
 			switch p := options.From.(type) {
-			case *streams.PointerTimestamp:
+			case *events.PointerTimestamp:
 				config.DeliverPolicy = jetstream.DeliverByStartTimePolicy
 				config.OptStartTime = &p.Timestamp
-			case *streams.PointerOffset:
+			case *events.PointerOffset:
 				config.DeliverPolicy = jetstream.DeliverByStartSequencePolicy
 				config.OptStartSeq = p.ID
-			case *streams.PointerStart:
+			case *events.PointerStart:
 				config.DeliverPolicy = jetstream.DeliverAllPolicy
-			case *streams.PointerEnd:
+			case *events.PointerEnd:
 				config.DeliverPolicy = jetstream.DeliverLastPolicy
 			}
 		}
@@ -222,20 +226,20 @@ func (c *Client) setConsumerSettings(config *jetstream.ConsumerConfig, options *
 	}
 }
 
-func getOptionsAsAttr(options *consumers.Options) slog.Attr {
+func getOptionsAsAttr(options *events.ConsumerOptions) slog.Attr {
 	attrs := make([]any, 0, 4)
 
 	attrs = append(attrs, slog.Any("subjects", options.Subjects))
 
 	if options.From != nil {
 		switch p := options.From.(type) {
-		case *streams.PointerTimestamp:
+		case *events.PointerTimestamp:
 			attrs = append(attrs, slog.Time("from", p.Timestamp))
-		case *streams.PointerOffset:
+		case *events.PointerOffset:
 			attrs = append(attrs, slog.Uint64("from", p.ID))
-		case *streams.PointerStart:
+		case *events.PointerStart:
 			attrs = append(attrs, slog.String("from", "start"))
-		case *streams.PointerEnd:
+		case *events.PointerEnd:
 			attrs = append(attrs, slog.String("from", "end"))
 		}
 	}

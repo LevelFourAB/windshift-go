@@ -11,9 +11,6 @@ import (
 
 	"github.com/levelfourab/windshift-go"
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/consumers"
-	"github.com/levelfourab/windshift-go/events/streams"
-	"github.com/levelfourab/windshift-go/events/subscribe"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -43,13 +40,13 @@ func main() {
 	consumer, err := eventsClient.EnsureConsumer(
 		ctx,
 		"test",
-		consumers.WithConsumeFrom(streams.AtStreamStart()),
+		events.WithConsumeFrom(events.AtStreamStart()),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), subscribe.MaxPendingEvents(*parallelism))
+	eventChannel, err := eventsClient.Subscribe(ctx, "test", consumer.Name(), events.WithPrefetch(*parallelism))
 	if err != nil {
 		log.Fatal(err)
 	}

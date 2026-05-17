@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/levelfourab/windshift-go/events"
-	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -20,7 +19,7 @@ type Stream struct{}
 
 // EnsureStream ensures that a JetStream stream exists with the given configuration.
 // If the stream already exists, it will be updated with the new configuration.
-func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.Option) (streams.Stream, error) {
+func (m *Client) EnsureStream(ctx context.Context, name string, opts ...events.StreamOption) (events.Stream, error) {
 	ctx, span := m.tracer.Start(
 		ctx,
 		"windshift.events.EnsureStream",
@@ -32,12 +31,9 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.
 	)
 	defer span.End()
 
-	options := streams.Options{}
-	for _, opt := range opts {
-		err := opt(&options)
-		if err != nil {
-			return nil, err
-		}
+	options := events.StreamOptions{}
+	if err := options.Apply(opts); err != nil {
+		return nil, err
 	}
 
 	if !events.IsValidStreamName(name) {
@@ -72,9 +68,9 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.
 	streamConfig.MaxAge = options.RetentionPolicy.MaxAge
 
 	switch options.RetentionPolicy.DiscardPolicy {
-	case streams.DiscardPolicyOld, streams.DiscardPolicyDefault:
+	case events.DiscardPolicyOld, events.DiscardPolicyDefault:
 		streamConfig.Discard = jetstream.DiscardOld
-	case streams.DiscardPolicyNew:
+	case events.DiscardPolicyNew:
 		streamConfig.Discard = jetstream.DiscardNew
 	default:
 		span.SetStatus(codes.Error, "invalid discard policy")
@@ -85,9 +81,9 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.
 
 	// Storage
 	switch options.Storage.Type {
-	case streams.StorageTypeFile, streams.StorageTypeDefault:
+	case events.StorageTypeFile, events.StorageTypeDefault:
 		streamConfig.Storage = jetstream.FileStorage
-	case streams.StorageTypeMemory:
+	case events.StorageTypeMemory:
 		streamConfig.Storage = jetstream.MemoryStorage
 	default:
 		span.SetStatus(codes.Error, "invalid storage type")
@@ -102,9 +98,9 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.
 
 	// Source of events
 	switch source := options.Source.(type) {
-	case *streams.DataSourceSubjects:
+	case *events.DataSourceSubjects:
 		streamConfig.Subjects = source.Subjects
-	case *streams.DataSourceAggregate:
+	case *events.DataSourceAggregate:
 		sources := make([]*jetstream.StreamSource, len(source.Sources))
 		for i, source := range source.Sources {
 			natsSource, err := toNatsStreamSource(source)
@@ -145,7 +141,7 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.
 	return newStream(res), nil
 }
 
-func toNatsStreamSource(source *streams.StreamSource) (*jetstream.StreamSource, error) {
+func toNatsStreamSource(source *events.StreamSource) (*jetstream.StreamSource, error) {
 	res := &jetstream.StreamSource{
 		Name: source.Name,
 	}
@@ -159,14 +155,14 @@ func toNatsStreamSource(source *streams.StreamSource) (*jetstream.StreamSource, 
 	}
 
 	switch from := source.Pointer.(type) {
-	case *streams.PointerEnd:
+	case *events.PointerEnd:
 		now := time.Now()
 		res.OptStartTime = &now
-	case *streams.PointerOffset:
+	case *events.PointerOffset:
 		res.OptStartSeq = from.ID
-	case *streams.PointerTimestamp:
+	case *events.PointerTimestamp:
 		res.OptStartTime = &from.Timestamp
-	case *streams.PointerStart:
+	case *events.PointerStart:
 		// Start is the default
 	}
 
@@ -175,9 +171,9 @@ func toNatsStreamSource(source *streams.StreamSource) (*jetstream.StreamSource, 
 
 type stream struct {
 	name                string
-	retentionPolicy     streams.RetentionPolicy
-	source              streams.DataSource
-	storage             streams.Storage
+	retentionPolicy     events.RetentionPolicy
+	source              events.DataSource
+	storage             events.Storage
 	deduplicationWindow time.Duration
 	maxEventSize        uint
 }
@@ -186,15 +182,15 @@ func (s *stream) Name() string {
 	return s.name
 }
 
-func (s *stream) RetentionPolicy() streams.RetentionPolicy {
+func (s *stream) RetentionPolicy() events.RetentionPolicy {
 	return s.retentionPolicy
 }
 
-func (s *stream) Source() streams.DataSource {
+func (s *stream) Source() events.DataSource {
 	return s.source
 }
 
-func (s *stream) Storage() streams.Storage {
+func (s *stream) Storage() events.Storage {
 	return s.storage
 }
 
@@ -234,35 +230,35 @@ func newStream(jsStream jetstream.Stream) *stream {
 
 	switch info.Config.Discard {
 	case jetstream.DiscardOld:
-		res.retentionPolicy.DiscardPolicy = streams.DiscardPolicyOld
+		res.retentionPolicy.DiscardPolicy = events.DiscardPolicyOld
 	case jetstream.DiscardNew:
-		res.retentionPolicy.DiscardPolicy = streams.DiscardPolicyNew
+		res.retentionPolicy.DiscardPolicy = events.DiscardPolicyNew
 	}
 
 	res.retentionPolicy.DiscardNewPerSubject = info.Config.DiscardNewPerSubject
 
 	switch info.Config.Storage {
 	case jetstream.FileStorage:
-		res.storage.Type = streams.StorageTypeFile
+		res.storage.Type = events.StorageTypeFile
 	case jetstream.MemoryStorage:
-		res.storage.Type = streams.StorageTypeMemory
+		res.storage.Type = events.StorageTypeMemory
 	}
 
 	res.storage.Replicas = uint(info.Config.Replicas)
 
 	if len(info.Config.Sources) > 0 {
-		sources := make([]*streams.StreamSource, len(info.Config.Sources))
+		sources := make([]*events.StreamSource, len(info.Config.Sources))
 		for i, source := range info.Config.Sources {
-			sources[i] = &streams.StreamSource{
+			sources[i] = &events.StreamSource{
 				Name: source.Name,
 			}
 		}
 
-		res.source = &streams.DataSourceAggregate{
+		res.source = &events.DataSourceAggregate{
 			Sources: sources,
 		}
 	} else {
-		res.source = &streams.DataSourceSubjects{
+		res.source = &events.DataSourceSubjects{
 			Subjects: info.Config.Subjects,
 		}
 	}

@@ -1,11 +1,34 @@
-package streams
+package events
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
-type Options struct {
+// Stream contains information about a defined stream.
+type Stream interface {
+	// Name is the unique identifier of the stream.
+	Name() string
+
+	// RetentionPolicy defines the retention policy for the stream.
+	RetentionPolicy() RetentionPolicy
+
+	// Source defines how events are sourced into this stream.
+	Source() DataSource
+
+	// Storage defines the storage configuration for the stream.
+	Storage() Storage
+
+	// DeduplicationWindow defines the window of time in which duplicate events
+	// are discarded.
+	DeduplicationWindow() time.Duration
+
+	// MaxEventSize defines the maximum size of an event in bytes.
+	MaxEventSize() uint
+}
+
+type StreamOptions struct {
 	// RetentionPolicy defines the policy for retaining events in the stream.
 	RetentionPolicy RetentionPolicy
 
@@ -23,8 +46,28 @@ type Options struct {
 	MaxEventSize uint
 }
 
-// Option defines an option for configuring a stream.
-type Option func(*Options) error
+func (o *StreamOptions) Apply(opts []StreamOption) error {
+	for _, opt := range opts {
+		err := opt.applyToStream(o)
+		if err != nil {
+			return fmt.Errorf("failed to apply stream option: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// StreamOption defines an option for configuring a stream.
+type StreamOption interface {
+	applyToStream(*StreamOptions) error
+}
+
+// StreamAndConsumerOption is an option that can be applied to both streams and
+// consumers, such as [WithSubjects].
+type StreamAndConsumerOption interface {
+	StreamOption
+	ConsumerOption
+}
 
 // RetentionPolicy defines the policy for retaining events in the stream.
 type RetentionPolicy struct {
@@ -60,41 +103,64 @@ const (
 	DiscardPolicyNew DiscardPolicy = "new"
 )
 
+type maxAgeOption time.Duration
+
+func (o maxAgeOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.MaxAge = time.Duration(o)
+	return nil
+}
+
 // WithMaxAge sets the maximum age of events in the stream. Use [WithDiscardPolicy]
 // to change the behavior when this limit is reached.
-func WithMaxAge(maxAge time.Duration) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.MaxAge = maxAge
-		return nil
-	}
+func WithMaxAge(maxAge time.Duration) StreamOption {
+	return maxAgeOption(maxAge)
+}
+
+type maxEventsOption uint
+
+func (o maxEventsOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.MaxEvents = uint(o)
+	return nil
 }
 
 // WithMaxEvents sets the maximum number of events in the stream. Use
 // [WithDiscardPolicy] to change the behavior when this limit is reached.
-func WithMaxEvents(maxEvents uint) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.MaxEvents = maxEvents
-		return nil
-	}
+func WithMaxEvents(maxEvents uint) StreamOption {
+	return maxEventsOption(maxEvents)
+}
+
+type maxEventsPerSubjectOption uint
+
+func (o maxEventsPerSubjectOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.MaxEventsPerSubject = uint(o)
+	return nil
 }
 
 // WithMaxEventsPerSubject sets the maximum number of events per subject in the
 // stream. Use [WithDiscardPolicy] to change the behavior when this limit is
 // reached.
-func WithMaxEventsPerSubject(maxEventsPerSubject uint) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.MaxEventsPerSubject = maxEventsPerSubject
-		return nil
-	}
+func WithMaxEventsPerSubject(maxEventsPerSubject uint) StreamOption {
+	return maxEventsPerSubjectOption(maxEventsPerSubject)
+}
+
+type maxBytesOption uint
+
+func (o maxBytesOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.MaxBytes = uint(o)
+	return nil
 }
 
 // WithMaxBytes sets the maximum number of bytes in the stream. Use
 // [WithDiscardPolicy] to change the behavior when this limit is reached.
-func WithMaxBytes(maxBytes uint) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.MaxBytes = maxBytes
-		return nil
-	}
+func WithMaxBytes(maxBytes uint) StreamOption {
+	return maxBytesOption(maxBytes)
+}
+
+type discardPolicyOption DiscardPolicy
+
+func (o discardPolicyOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.DiscardPolicy = DiscardPolicy(o)
+	return nil
 }
 
 // WithDiscardPolicy sets the discard policy to use when a limit is reached.
@@ -102,22 +168,23 @@ func WithMaxBytes(maxBytes uint) Option {
 //
 // If this is set to [DiscardPolicyNew], use [WithDiscardNewPerSubject] to
 // control whether to discard new events per subject.
-func WithDiscardPolicy(discardPolicy DiscardPolicy) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.DiscardPolicy = discardPolicy
-		return nil
-	}
+func WithDiscardPolicy(discardPolicy DiscardPolicy) StreamOption {
+	return discardPolicyOption(discardPolicy)
+}
+
+type discardNewPerSubjectOption bool
+
+func (o discardNewPerSubjectOption) applyToStream(opts *StreamOptions) error {
+	opts.RetentionPolicy.DiscardNewPerSubject = bool(o)
+	return nil
 }
 
 // WithDiscardNewPerSubject sets whether to discard new events per subject when
 // a limit is reached. The default is false.
 //
 // Use with [WithDiscardPolicy] set to [DiscardPolicyNew].
-func WithDiscardNewPerSubject(discardNewPerSubject bool) Option {
-	return func(o *Options) error {
-		o.RetentionPolicy.DiscardNewPerSubject = discardNewPerSubject
-		return nil
-	}
+func WithDiscardNewPerSubject(discardNewPerSubject bool) StreamOption {
+	return discardNewPerSubjectOption(discardNewPerSubject)
 }
 
 // StreamSource is used to define how to source events from a given stream. It
@@ -211,11 +278,42 @@ type DataSourceAggregate struct {
 
 func (DataSourceAggregate) isStreamDataSource() {}
 
-// WithSubjects is used to indicate that a stream should receive events
-// from the given subjects. At least one subject is required and wildcards are
-// supported.
+type subjectsOption []string
+
+func (o subjectsOption) applyToStream(opts *StreamOptions) error {
+	if opts.Source != nil {
+		return errors.New("source is already set")
+	}
+
+	if len(o) == 0 {
+		return errors.New("at least one subject is required")
+	}
+
+	opts.Source = &DataSourceSubjects{
+		Subjects: []string(o),
+	}
+
+	return nil
+}
+
+func (o subjectsOption) applyToConsumer(opts *ConsumerOptions) error {
+	if len(o) == 0 {
+		return errors.New("at least one subject is required")
+	}
+
+	opts.Subjects = []string(o)
+	return nil
+}
+
+// WithSubjects indicates which subjects are interesting for either a stream or
+// consumer.
 //
-// This option is mutually exclusive with [MirrorStream] and [AggregateStreams].
+// For streams this indicates the subjects that will be stored in the stream.
+// At least one subject is required and wildcards are supported. This option is
+// mutually exclusive with [MirrorStream] and [AggregateStreams].
+//
+// For consumers this indicates the subjects that will be received by the
+// consumer. At least one subject is required and wildcards are supported.
 //
 // Examples:
 //
@@ -249,44 +347,36 @@ func (DataSourceAggregate) isStreamDataSource() {}
 //     `time.us.east` and `time.us.east.atlanta` but not `time.eu.east`.
 //
 // See NATS concepts: https://docs.nats.io/nats-concepts/subjects
-func WithSubjects(subjects ...string) Option {
-	return func(o *Options) error {
-		if o.Source != nil {
-			return errors.New("source is already set")
-		}
+func WithSubjects(subjects ...string) StreamAndConsumerOption {
+	return subjectsOption(subjects)
+}
 
-		if len(subjects) == 0 {
-			return errors.New("at least one subject is required")
-		}
+type aggregateStreamsOption []*StreamSource
 
-		o.Source = &DataSourceSubjects{
-			Subjects: subjects,
-		}
-		return nil
+func (o aggregateStreamsOption) applyToStream(opts *StreamOptions) error {
+	if opts.Source != nil {
+		return errors.New("source is already set")
 	}
+
+	for _, source := range o {
+		if err := validateStreamSource(source); err != nil {
+			return err
+		}
+	}
+
+	opts.Source = &DataSourceAggregate{
+		Sources: o,
+	}
+
+	return nil
 }
 
 // AggregateStreams is used to indicate that a stream is an aggregate of
 // multiple streams. At least one stream source is required.
 //
 // This option is mutually exclusive with [WithSubjects] and [MirrorStream].
-func AggregateStreams(sources ...*StreamSource) Option {
-	return func(o *Options) error {
-		if o.Source != nil {
-			return errors.New("source is already set")
-		}
-
-		for _, source := range sources {
-			if err := validateStreamSource(source); err != nil {
-				return err
-			}
-		}
-
-		o.Source = &DataSourceAggregate{
-			Sources: sources,
-		}
-		return nil
-	}
+func AggregateStreams(sources ...*StreamSource) StreamOption {
+	return aggregateStreamsOption(sources)
 }
 
 // Storage is used to define how to store a stream.
@@ -313,42 +403,59 @@ const (
 	StorageTypeMemory StorageType = "memory"
 )
 
+type storageTypeOption StorageType
+
+func (o storageTypeOption) applyToStream(opts *StreamOptions) error {
+	opts.Storage.Type = StorageType(o)
+	return nil
+}
+
 // WithStorageType is used to indicate where a stream should be stored. If not
 // set, the default [StorageTypeFile] will be used.
-func WithStorageType(storageType StorageType) Option {
-	return func(o *Options) error {
-		o.Storage.Type = storageType
-		return nil
-	}
+func WithStorageType(storageType StorageType) StreamOption {
+	return storageTypeOption(storageType)
+}
+
+type storageReplicasOption uint
+
+func (o storageReplicasOption) applyToStream(opts *StreamOptions) error {
+	opts.Storage.Replicas = uint(o)
+	return nil
 }
 
 // WithStorageReplicas is used to indicate how many replicas of a stream should
 // be stored. If not set, the default value of 1 will be used.
-func WithStorageReplicas(replicas uint) Option {
-	return func(o *Options) error {
-		o.Storage.Replicas = replicas
-		return nil
-	}
+func WithStorageReplicas(replicas uint) StreamOption {
+	return storageReplicasOption(replicas)
+}
+
+type deduplicationWindowOption time.Duration
+
+func (o deduplicationWindowOption) applyToStream(opts *StreamOptions) error {
+	d := time.Duration(o)
+	opts.DeduplicationWindow = &d
+	return nil
 }
 
 // WithDeduplicationWindow is used to indicate how long events should be
 // deduplicated for.
 //
 // Defaults to 2 minutes if not set.
-func WithDeduplicationWindow(deduplicationWindow time.Duration) Option {
-	return func(o *Options) error {
-		o.DeduplicationWindow = &deduplicationWindow
-		return nil
-	}
+func WithDeduplicationWindow(deduplicationWindow time.Duration) StreamOption {
+	return deduplicationWindowOption(deduplicationWindow)
+}
+
+type maxEventSizeOption uint
+
+func (o maxEventSizeOption) applyToStream(opts *StreamOptions) error {
+	opts.MaxEventSize = uint(o)
+	return nil
 }
 
 // WithMaxEventSize is used to indicate the maximum size of an event. Can not
 // be larger than 1 MiB.
 //
 // Defaults to 1 MiB if not set.
-func WithMaxEventSize(maxEventSize uint) Option {
-	return func(o *Options) error {
-		o.MaxEventSize = maxEventSize
-		return nil
-	}
+func WithMaxEventSize(maxEventSize uint) StreamOption {
+	return maxEventSizeOption(maxEventSize)
 }
