@@ -147,7 +147,15 @@ func (e *Client) Publish(ctx context.Context, subject string, data proto.Message
 					span.AddEvent("could not publish, retrying")
 
 					attempt++
-					time.Sleep(delay)
+
+					timer := time.NewTimer(delay)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						span.SetStatus(codes.Unset, "context canceled")
+						return nil, fmt.Errorf("failed to publish message: %w", ctx.Err())
+					case <-timer.C:
+					}
 					continue
 				}
 			}
