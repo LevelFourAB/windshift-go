@@ -21,7 +21,7 @@ type Stream struct{}
 // EnsureStream ensures that a JetStream stream exists with the given configuration.
 // If the stream already exists, it will be updated with the new configuration.
 func (m *Client) EnsureStream(ctx context.Context, name string, opts ...streams.Option) (streams.Stream, error) {
-	_, span := m.tracer.Start(
+	ctx, span := m.tracer.Start(
 		ctx,
 		"windshift.events.EnsureStream",
 		trace.WithSpanKind(trace.SpanKindClient),
