@@ -3,6 +3,7 @@ package events_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -11,8 +12,12 @@ import (
 	"github.com/levelfourab/windshift-go/events/consumers"
 	"github.com/levelfourab/windshift-go/events/streams"
 	"github.com/levelfourab/windshift-go/events/subscribe"
+	internalevents "github.com/levelfourab/windshift-go/internal/events"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -803,18 +808,35 @@ var _ = Describe("Event Consumption", func() {
 	})
 
 	Describe("OpenTelemetry", func() {
-		var tracer trace.Tracer
+		// Spans are produced by the client's global tracer (otel.Tracer).
+		// otel caches a delegating tracer that binds once to the first
+		// provider set, so we install the provider exactly once and reset an
+		// in-memory exporter between specs instead of swapping providers.
+		var exporter *tracetest.InMemoryExporter
+		var otelProviderInstalled bool
 
 		BeforeEach(func() {
-			// Set up a trace.Tracer that will record all spans
-			tracingProvider := sdktrace.NewTracerProvider()
-			tracer = tracingProvider.Tracer("test")
+			if !otelProviderInstalled {
+				exporter = tracetest.NewInMemoryExporter()
+				tp := sdktrace.NewTracerProvider(
+					sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(exporter)),
+				)
+				otel.SetTracerProvider(tp)
+				otelProviderInstalled = true
+			}
+			exporter.Reset()
 		})
 
-		It("receiving an event creates a span", func(ctx context.Context) {
-			ctx, span := tracer.Start(ctx, "test")
-			defer span.End()
+		findSpan := func(spans tracetest.SpanStubs, name string) *tracetest.SpanStub {
+			for i := range spans {
+				if spans[i].Name == name {
+					return &spans[i]
+				}
+			}
+			return nil
+		}
 
+		It("receive + process spans are created and linked to the publisher", func(ctx context.Context) {
 			sub, err := manager.EnsureConsumer(ctx, "events")
 			Expect(err).ToNot(HaveOccurred())
 
@@ -828,12 +850,119 @@ var _ = Describe("Event Consumption", func() {
 			case event := <-ec:
 				Expect(event).ToNot(BeNil())
 
-				eventSpan := trace.SpanFromContext(event.Context())
-				Expect(eventSpan.SpanContext().IsValid()).To(BeTrue())
-				Expect(eventSpan.SpanContext().TraceID().String()).To(Equal(span.SpanContext().TraceID().String()))
+				processCtxSpan := trace.SpanFromContext(event.Context())
+				Expect(processCtxSpan.SpanContext().IsValid()).To(BeTrue())
+
+				err = event.Ack(ctx)
+				Expect(err).ToNot(HaveOccurred())
 			case <-time.After(200 * time.Millisecond):
 				Fail("no event received")
 			}
+
+			Eventually(func() tracetest.SpanStubs {
+				return exporter.GetSpans()
+			}).Should(ContainElements(
+				HaveField("Name", "events.test receive"),
+				HaveField("Name", "events.test process"),
+				HaveField("Name", "events.test publish"),
+			))
+
+			spans := exporter.GetSpans()
+			receiveSpan := findSpan(spans, "events.test receive")
+			processSpan := findSpan(spans, "events.test process")
+			publishSpan := findSpan(spans, "events.test publish")
+
+			Expect(receiveSpan).ToNot(BeNil())
+			Expect(processSpan).ToNot(BeNil())
+			Expect(publishSpan).ToNot(BeNil())
+
+			Expect(receiveSpan.SpanKind).To(Equal(trace.SpanKindClient))
+			Expect(processSpan.SpanKind).To(Equal(trace.SpanKindConsumer))
+			Expect(publishSpan.SpanKind).To(Equal(trace.SpanKindProducer))
+
+			// process is a child of receive.
+			Expect(processSpan.Parent.SpanID()).To(Equal(receiveSpan.SpanContext.SpanID()))
+
+			// Both receive and process link to the publisher's trace.
+			Expect(receiveSpan.Links).To(HaveLen(1))
+			Expect(receiveSpan.Links[0].SpanContext.TraceID()).To(Equal(publishSpan.SpanContext.TraceID()))
+			Expect(processSpan.Links).To(HaveLen(1))
+			Expect(processSpan.Links[0].SpanContext.TraceID()).To(Equal(publishSpan.SpanContext.TraceID()))
+
+			// Linking model: producer and consumer are separate traces.
+			Expect(processSpan.SpanContext.TraceID()).ToNot(Equal(publishSpan.SpanContext.TraceID()))
+		})
+
+		It("process span is ended on drop", func(ctx context.Context) {
+			subCtx, cancel := context.WithCancel(ctx)
+
+			sub, err := manager.EnsureConsumer(subCtx, "events")
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Subscribe(subCtx, "events", sub.Name())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Give the message time to be delivered to the subscription's
+			// handler, where it blocks on the channel send because nothing
+			// consumes the channel. Then cancel so the event is dropped
+			// before delivery (context-canceled drop path).
+			time.Sleep(150 * time.Millisecond)
+			cancel()
+
+			Eventually(func() tracetest.SpanStubs {
+				return exporter.GetSpans()
+			}).Should(ContainElement(HaveField("Name", "events.test process")))
+
+			processSpan := findSpan(exporter.GetSpans(), "events.test process")
+			Expect(processSpan).ToNot(BeNil())
+			Expect(processSpan.Status.Code).To(Equal(codes.Error))
+		})
+
+		It("process span is ended when Ack ultimately fails", func(ctx context.Context) {
+			// Build a client whose NATS connection we control so we can
+			// break it and force msg.Ack() to fail deterministically.
+			natsConn := GetNATS()
+			js, err := jetstream.New(natsConn)
+			Expect(err).ToNot(HaveOccurred())
+			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+			client := internalevents.New(js, logger)
+
+			_, err = client.EnsureStream(ctx, "events", streams.WithSubjects("events.>"))
+			Expect(err).ToNot(HaveOccurred())
+
+			sub, err := client.EnsureConsumer(ctx, "events")
+			Expect(err).ToNot(HaveOccurred())
+
+			ec, err := client.Subscribe(ctx, "events", sub.Name())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = client.Publish(ctx, "events.test", &emptypb.Empty{})
+			Expect(err).ToNot(HaveOccurred())
+
+			select {
+			case event := <-ec:
+				Expect(event).ToNot(BeNil())
+
+				// Break the connection so the ack round-trip fails, then
+				// Ack with no retry: backoff.Run returns the error and
+				// Ack must still end the process span (the failure path).
+				natsConn.Close()
+				err = event.Ack(ctx, events.WithNoRetry())
+				Expect(err).To(HaveOccurred())
+			case <-time.After(500 * time.Millisecond):
+				Fail("no event received")
+			}
+
+			Eventually(func() tracetest.SpanStubs {
+				return exporter.GetSpans()
+			}).Should(ContainElement(HaveField("Name", "events.test process")))
+
+			processSpan := findSpan(exporter.GetSpans(), "events.test process")
+			Expect(processSpan).ToNot(BeNil())
+			Expect(processSpan.Status.Code).To(Equal(codes.Error))
 		})
 	})
 })

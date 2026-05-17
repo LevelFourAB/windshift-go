@@ -155,34 +155,54 @@ func (s *subscription) handleMsg(ctx context.Context, msg jetstream.Msg) {
 
 	if s.closed {
 		// The subscription has been canceled and the channel closed; drop
-		// the event rather than sending on a closed channel.
+		// the event rather than sending on a closed channel. The library owns
+		// the process span, so end it here.
+		event.finish(codes.Error, "subscription closed before delivery")
 		return
 	}
 
 	select {
 	case s.events <- event:
-		// Event sent to channel
+		// Event sent to channel. Ownership of the process span passes to the
+		// consumer, who must Ack/Reject to finish it.
 	case <-ctx.Done():
-		// Context is done, stop trying to fetch messages
-		break
+		// Context is done, stop trying to fetch messages. End the process
+		// span as the event will never be delivered.
+		event.finish(codes.Error, "context canceled before delivery")
 	}
 }
 
 func (s *subscription) newEvent(ctx context.Context, msg jetstream.Msg) (*Event, error) {
-	// We may have tracing information stored in the event headers, so we
-	// extract them and create our own span indicating that we received the
-	// message.
+	// The producer may have stored its trace context in the event headers.
 	//
-	// Unlike for most tracing the span is only ended in this function if an
-	// error occurs, otherwise it is passed into the event and ended when the
-	// event is consumed.
+	// Two spans are created per message:
+	//
+	//   - A short "<subject> receive" CLIENT span, started as a root (its own
+	//     trace, detached from the long-lived subscribe span) and ended
+	//     immediately in this function.
+	//   - A long "<subject> process" CONSUMER span, child of the receive span,
+	//     carried in Event.Context(). Its lifecycle is fully owned by the
+	//     library: it is ended by Event.finish on Ack/Reject or when the event
+	//     is dropped before delivery. A caller that never settles the event is
+	//     an inherent, accepted leak of this design.
+	//
+	// Both spans link to the producer's span when a valid trace context was
+	// propagated.
 	headers := msg.Headers()
-	msgCtx := s.client.w3cPropagator.Extract(ctx, eventTracingHeaders{
+	extractedCtx := s.client.w3cPropagator.Extract(ctx, eventTracingHeaders{
 		headers: &headers,
 	})
-	msgCtx, span := s.client.tracer.Start(
-		msgCtx,
-		msg.Subject()+" receive", trace.WithSpanKind(trace.SpanKindConsumer),
+	producerSC := trace.SpanContextFromContext(extractedCtx)
+	var producerLink []trace.Link
+	if producerSC.IsValid() {
+		producerLink = []trace.Link{{SpanContext: producerSC}}
+	}
+
+	receiveCtx, receiveSpan := s.client.tracer.Start(
+		context.Background(),
+		msg.Subject()+" receive",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithLinks(producerLink...),
 		trace.WithAttributes(
 			semconv.MessagingSystemKey.String("nats"),
 			semconv.MessagingOperationTypeReceive,
@@ -192,30 +212,47 @@ func (s *subscription) newEvent(ctx context.Context, msg jetstream.Msg) (*Event,
 
 	md, err := msg.Metadata()
 	if err != nil {
-		// Record the error and end the tracing as the span is not passed on
+		// Record the error and end the tracing as no span is passed on. Only
+		// the receive span exists at this point, so there is no leak.
 		s.logger.Error("Failed to get message metadata", slog.Any("error", err))
-		span.RecordError(err)
+		receiveSpan.RecordError(err)
 
 		// If we fail to parse the metadata something is off, terminate the
 		// message so it is not redelivered.
 		err2 := msg.Term()
 		if err2 != nil {
 			s.logger.Warn("Failed to terminate message", slog.Any("error", err2))
-			span.RecordError(err2)
+			receiveSpan.RecordError(err2)
 		}
 
-		span.SetStatus(codes.Error, "failed to get message metadata")
-		span.End()
+		receiveSpan.SetStatus(codes.Error, "failed to get message metadata")
+		receiveSpan.End()
 		return nil, err
 	}
 
-	// Set the message ID as an attribute
-	span.SetAttributes(semconv.MessagingMessageID(fmt.Sprintf("%d", md.Sequence.Stream)))
+	messageID := semconv.MessagingMessageID(fmt.Sprintf("%d", md.Sequence.Stream))
+	receiveSpan.SetAttributes(messageID)
+
+	processCtx, processSpan := s.client.tracer.Start(
+		receiveCtx,
+		msg.Subject()+" process",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithLinks(producerLink...),
+		trace.WithAttributes(
+			semconv.MessagingSystemKey.String("nats"),
+			semconv.MessagingOperationTypeDeliver,
+			semconv.MessagingDestinationName(msg.Subject()),
+			messageID,
+		),
+	)
+
+	// The receive span is short: it only covers the receive + metadata parse.
+	receiveSpan.End()
 
 	event := &Event{
 		sub:      s,
-		ctx:      msgCtx,
-		span:     span,
+		ctx:      processCtx,
+		span:     processSpan,
 		msg:      msg,
 		metadata: md,
 		headers:  parseHeaders(msg),
@@ -254,10 +291,25 @@ type Event struct {
 	headers *headers
 
 	onDone func()
+
+	finishOnce sync.Once
 }
 
 func (e *Event) Context() context.Context {
 	return e.ctx
+}
+
+// finish runs the terminal cleanup for an event exactly once: it removes any
+// autoping entry and ends the process span with the given status. It is safe
+// to call from any exit path (Ack, Reject, or a drop before delivery).
+func (e *Event) finish(code codes.Code, desc string) {
+	e.finishOnce.Do(func() {
+		if e.onDone != nil {
+			e.onDone()
+		}
+		e.span.SetStatus(code, desc)
+		e.span.End()
+	})
 }
 
 func (e *Event) ID() uint64 {
@@ -299,24 +351,29 @@ func (e *Event) Ack(ctx context.Context, opts ...events.AckOption) error {
 		options.Backoff = e.sub.callRetryBackoff
 	}
 
-	return backoff.Run(ctx, func() error {
+	err := backoff.Run(ctx, func() error {
 		e.sub.logger.Debug("Acknowledging event", slog.Uint64("eventID", e.ID()))
 		err := e.msg.Ack()
 		if errors.Is(err, jetstream.ErrMsgAlreadyAckd) {
 			e.span.RecordError(err)
+			e.finish(codes.Ok, "already settled")
 			return backoff.Permanent(fmt.Errorf("message already acked: %w", err))
 		} else if err != nil {
 			e.span.RecordError(err)
 			return fmt.Errorf("could not ack message: %w", err)
 		}
 
-		if e.onDone != nil {
-			e.onDone()
-		}
-
-		e.span.SetStatus(codes.Ok, "")
+		e.finish(codes.Ok, "")
 		return nil
 	}, options.Backoff)
+	if err != nil {
+		// Ack ultimately failed (retries exhausted or context canceled).
+		// finish is idempotent, so the success / already-settled paths
+		// that already ended the span are unaffected; this only ends the
+		// span on the genuine-failure exits, preventing a leak.
+		e.finish(codes.Error, "ack failed")
+	}
+	return err
 }
 
 func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
@@ -343,7 +400,7 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 		delay = options.Delay
 	}
 
-	return backoff.Run(ctx, func() error {
+	err := backoff.Run(ctx, func() error {
 		var err error
 		if permanently {
 			e.sub.logger.Debug("Rejecting event", slog.Uint64("eventID", e.ID()), slog.String("type", "permanent"))
@@ -361,19 +418,23 @@ func (e *Event) Reject(ctx context.Context, opts ...events.RejectOption) error {
 			// previous attempt succeeded server-side but errored
 			// client-side. Treat this as a permanent, successful reject.
 			e.span.RecordError(err)
+			e.finish(codes.Ok, "already settled")
 			return backoff.Permanent(fmt.Errorf("message already acked: %w", err))
 		} else if err != nil {
 			e.span.RecordError(err)
 			return fmt.Errorf("could not reject message: %w", err)
 		}
 
-		if e.onDone != nil {
-			e.onDone()
-		}
-
-		e.span.SetStatus(codes.Ok, "")
+		e.finish(codes.Ok, "")
 		return nil
 	}, options.Backoff)
+	if err != nil {
+		// Reject ultimately failed (retries exhausted or context
+		// canceled). finish is idempotent, so this only ends the span on
+		// the genuine-failure exits, preventing a leak.
+		e.finish(codes.Error, "reject failed")
+	}
+	return err
 }
 
 func (e *Event) Ping(ctx context.Context, opts ...events.PingOption) error {
