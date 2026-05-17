@@ -58,7 +58,9 @@ type Client interface {
 	// must have been created before calling this method, use [Client.EnsureConsumer]
 	// to create a consumer.
 	//
-	// Subscriptions are valid until the context is canceled.
+	// Subscriptions are valid until the context is canceled. When the
+	// context is canceled the returned channel is closed once delivery has
+	// stopped, so ranging over it will terminate.
 	//
 	// To control the number of events that can be processed concurrently, use
 	// [subscribe.MaxProcessingEvents].

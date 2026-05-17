@@ -297,6 +297,67 @@ var _ = Describe("Event Consumption", func() {
 			}
 		})
 
+		It("canceling context closes the channel", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			Expect(err).ToNot(HaveOccurred())
+
+			ctx1, cancel1 := context.WithCancel(ctx)
+			ec, err := manager.Subscribe(ctx1, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+
+			cancel1()
+
+			// Ranging over the channel must terminate, so it has to be
+			// closed once delivery has stopped.
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				//nolint:revive // draining until closed is the point
+				for range ec {
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				Fail("channel was not closed after context cancellation")
+			}
+		})
+
+		It("canceling context while a send is blocked closes the channel without panicking", func(ctx context.Context) {
+			_, err := manager.EnsureConsumer(ctx, "events", consumers.WithName("test"))
+			Expect(err).ToNot(HaveOccurred())
+
+			ctx1, cancel1 := context.WithCancel(ctx)
+			ec, err := manager.Subscribe(ctx1, "events", "test")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Publish events but never read from the channel, so the
+			// internal send blocks. Canceling must unblock it and close
+			// the channel without a send-on-closed-channel panic.
+			for i := 0; i < 10; i++ {
+				_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			time.Sleep(100 * time.Millisecond)
+			cancel1()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				//nolint:revive // draining until closed is the point
+				for range ec {
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				Fail("channel was not closed after context cancellation")
+			}
+		})
+
 		It("acknowledging event stops delivery", func(ctx context.Context) {
 			_, err := manager.EnsureConsumer(ctx, "events",
 				consumers.WithName("test"),

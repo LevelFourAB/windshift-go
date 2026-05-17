@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/levelfourab/windshift-go/delays"
@@ -28,6 +29,14 @@ type subscription struct {
 
 	// channel is the channel used to send events to the caller.
 	events chan events.Event
+
+	// mu guards closed and serializes sending on events with closing it,
+	// so a message delivered after the context is canceled can never send
+	// on a closed channel.
+	mu sync.Mutex
+	// closed indicates that events has been closed and no more events
+	// should be sent.
+	closed bool
 
 	// callRetryBackoff is the default backoff strategy to use when acking,
 	// rejecting or pinging an event fails.
@@ -111,7 +120,16 @@ func createAutoPing(ctx context.Context, logger *slog.Logger, ackWait time.Durat
 func (s *subscription) canceler(ctx context.Context, consumeCtx jetstream.ConsumeContext) {
 	<-ctx.Done()
 	s.logger.Debug("Context done, stopping subscription")
+
+	// Stop delivery first. After this point no new messages will be
+	// dispatched, but a callback may still be in-flight or buffered, so we
+	// synchronize via mu before closing the channel.
 	consumeCtx.Stop()
+
+	s.mu.Lock()
+	s.closed = true
+	close(s.events)
+	s.mu.Unlock()
 }
 
 func (s *subscription) handleMsg(ctx context.Context, msg jetstream.Msg) {
@@ -126,6 +144,19 @@ func (s *subscription) handleMsg(ctx context.Context, msg jetstream.Msg) {
 			slog.Uint64("id", event.ID()),
 			slog.String("type", msg.Headers().Get("WS-Data-Type")),
 		)
+	}
+
+	// Hold mu for the duration of the send so the canceler cannot close
+	// the channel underneath us. The send is bounded by ctx.Done(), so the
+	// canceler never blocks on mu for longer than it takes this select to
+	// observe the canceled context.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		// The subscription has been canceled and the channel closed; drop
+		// the event rather than sending on a closed channel.
+		return
 	}
 
 	select {
