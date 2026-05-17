@@ -387,6 +387,117 @@ var _ = Describe("Streams", func() {
 			})
 		})
 
+		Context("Mirror source", func() {
+			It("mirrors a single stream", func(ctx context.Context) {
+				_, err := js.Stream(ctx, "test")
+				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
+
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
+				Expect(err).ToNot(HaveOccurred())
+
+				stream, err := manager.EnsureStream(ctx, "test2", events.MirrorStream(events.CopyFromStream("test")))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(stream.Source()).To(Equal(&events.DataSourceMirror{
+					Source: events.CopyFromStream("test"),
+				}))
+
+				createdStream, err := js.Stream(ctx, "test2")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdStream.CachedInfo().Config.Mirror).ToNot(BeNil())
+				Expect(createdStream.CachedInfo().Config.Mirror.Name).To(Equal("test"))
+			})
+
+			It("copies old data by default", func(ctx context.Context) {
+				_, err := js.Stream(ctx, "test")
+				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
+
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = manager.Publish(ctx, "test", &emptypb.Empty{})
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = manager.EnsureStream(ctx, "test2", events.MirrorStream(events.CopyFromStream("test")))
+				Expect(err).ToNot(HaveOccurred())
+
+				stream, err := js.Stream(ctx, "test2")
+				Expect(err).ToNot(HaveOccurred())
+
+				for i := 0; i < 10; i++ {
+					time.Sleep(100 * time.Millisecond)
+					info, err := stream.Info(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					if info.State.Msgs == 1 {
+						return
+					}
+				}
+
+				Fail("Did not receive message on mirror stream")
+			})
+
+			It("copies new data", func(ctx context.Context) {
+				_, err := js.Stream(ctx, "test")
+				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
+
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = manager.EnsureStream(ctx, "test2", events.MirrorStream(events.CopyFromStream("test")))
+				Expect(err).ToNot(HaveOccurred())
+
+				stream, err := js.Stream(ctx, "test2")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(stream.CachedInfo().State.Msgs).To(Equal(uint64(0)))
+
+				_, err = manager.Publish(ctx, "test", Data(&emptypb.Empty{}))
+				Expect(err).ToNot(HaveOccurred())
+
+				for i := 0; i < 10; i++ {
+					time.Sleep(100 * time.Millisecond)
+					info, err := stream.Info(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					if info.State.Msgs == 1 {
+						return
+					}
+				}
+
+				Fail("Did not receive message on mirror stream")
+			})
+
+			It("can start at end of other stream and will not receive old data", func(ctx context.Context) {
+				_, err := js.Stream(ctx, "test")
+				Expect(err).To(MatchError(jetstream.ErrStreamNotFound))
+
+				// Create the source stream
+				_, err = manager.EnsureStream(ctx, "test", events.WithSubjects("test"))
+				Expect(err).ToNot(HaveOccurred())
+
+				// Publish a message to the source stream
+				_, err = manager.Publish(ctx, "test", Data(&emptypb.Empty{}))
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create the mirror with the source
+				_, err = manager.EnsureStream(ctx, "test2", events.MirrorStream(
+					events.CopyFromStreamAt("test", events.AtStreamEnd()),
+				))
+				Expect(err).ToNot(HaveOccurred())
+
+				time.Sleep(500 * time.Millisecond)
+
+				stream, err := js.Stream(ctx, "test2")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(stream.CachedInfo().State.Msgs).To(Equal(uint64(0)))
+			})
+
+			It("is mutually exclusive with WithSubjects", func(ctx context.Context) {
+				_, err := manager.EnsureStream(ctx, "test2",
+					events.WithSubjects("x"),
+					events.MirrorStream(events.CopyFromStream("test")),
+				)
+				Expect(err).To(MatchError(ContainSubstring("source is already set")))
+			})
+		})
+
 		Describe("Retention policies", func() {
 			It("can create stream with max age", func(ctx context.Context) {
 				_, err := js.Stream(ctx, "test")

@@ -113,6 +113,14 @@ func (m *Client) EnsureStream(ctx context.Context, name string, opts ...events.S
 		}
 
 		streamConfig.Sources = sources
+	case *events.DataSourceMirror:
+		natsSource, err := toNatsStreamSource(source.Source)
+		if err != nil {
+			span.SetStatus(codes.Error, "source config invalid")
+			return nil, fmt.Errorf("source config invalid: %w", err)
+		}
+
+		streamConfig.Mirror = natsSource
 	default:
 		span.SetStatus(codes.Error, "invalid source type")
 		return nil, events.NewValidationError("invalid source type")
@@ -246,7 +254,11 @@ func newStream(jsStream jetstream.Stream) *stream {
 
 	res.storage.Replicas = uint(info.Config.Replicas)
 
-	if len(info.Config.Sources) > 0 {
+	if info.Config.Mirror != nil {
+		res.source = &events.DataSourceMirror{
+			Source: &events.StreamSource{Name: info.Config.Mirror.Name},
+		}
+	} else if len(info.Config.Sources) > 0 {
 		sources := make([]*events.StreamSource, len(info.Config.Sources))
 		for i, source := range info.Config.Sources {
 			sources[i] = &events.StreamSource{

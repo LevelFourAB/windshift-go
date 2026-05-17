@@ -278,6 +278,14 @@ type DataSourceAggregate struct {
 
 func (DataSourceAggregate) isStreamDataSource() {}
 
+// DataSourceMirror is used to indicate that a stream is a read-only mirror
+// of another stream.
+type DataSourceMirror struct {
+	Source *StreamSource
+}
+
+func (DataSourceMirror) isStreamDataSource() {}
+
 type subjectsOption []string
 
 func (o subjectsOption) applyToStream(opts *StreamOptions) error {
@@ -377,6 +385,31 @@ func (o aggregateStreamsOption) applyToStream(opts *StreamOptions) error {
 // This option is mutually exclusive with [WithSubjects] and [MirrorStream].
 func AggregateStreams(sources ...*StreamSource) StreamOption {
 	return aggregateStreamsOption(sources)
+}
+
+type mirrorStreamOption struct{ source *StreamSource }
+
+func (o mirrorStreamOption) applyToStream(opts *StreamOptions) error {
+	if opts.Source != nil {
+		return errors.New("source is already set")
+	}
+
+	if err := validateStreamSource(o.source); err != nil {
+		return err
+	}
+
+	opts.Source = &DataSourceMirror{Source: o.source}
+	return nil
+}
+
+// MirrorStream is used to indicate that a stream is a read-only mirror of
+// another stream. Use the CopyFromStream* constructors to build the source,
+// optionally filtering subjects or choosing a start position.
+//
+// This option is mutually exclusive with [WithSubjects] and
+// [AggregateStreams].
+func MirrorStream(source *StreamSource) StreamOption {
+	return mirrorStreamOption{source: source}
 }
 
 // Storage is used to define how to store a stream.
