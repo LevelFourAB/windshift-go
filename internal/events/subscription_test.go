@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/levelfourab/windshift-go/events"
@@ -528,6 +529,95 @@ var _ = Describe("Event Consumption", func() {
 			case <-time.After(100 * time.Millisecond):
 				// Make sure event isn't delivered for a certain period
 			}
+		})
+
+		It("auto-ping requeue/cancel path makes progress under volume of reject+redeliver", func(ctx context.Context) {
+			// Regression guard for the AutoPing stable-id path. Each event is
+			// held on its first delivery long enough to be auto-pinged (and so
+			// internally requeued in the DelayQueue with a fresh id) several
+			// times, then rejected (per-event onDone -> AutoPing.Remove), then
+			// redelivered and acked. This drives the requeue-then-cancel path
+			// hard and concurrently across many events. The meaningful,
+			// non-flaky invariants are: every event is eventually acked, the
+			// run loop keeps draining (the test completes well within the
+			// timeout rather than starving), and redeliveries stay bounded
+			// (no runaway redelivery storm). A single rare extra redelivery is
+			// tolerated because auto-ping + immediate reject has an inherent
+			// one-last-ping race that is independent of the stable-id fix.
+			const eventCount = 15
+
+			_, err := manager.EnsureConsumer(ctx, "events",
+				consumers.WithName("test"),
+				consumers.WithProcessingTimeout(300*time.Millisecond),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			ec, err := manager.Subscribe(ctx, "events", "test",
+				subscribe.WithAutoPingInterval(25*time.Millisecond))
+			Expect(err).ToNot(HaveOccurred())
+
+			for i := 0; i < eventCount; i++ {
+				_, err = manager.Publish(ctx, "events.test", &emptypb.Empty{})
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			// deliveries[streamSeq] = number of times that logical event was
+			// delivered (stream sequence is stable across redeliveries).
+			// acked tracks which logical events have been acked so we ack each
+			// exactly once even if a stray extra redelivery arrives.
+			deliveries := make(map[uint64]int)
+			acked := make(map[uint64]bool)
+			totalDeliveries := 0
+			start := time.Now()
+			deadline := time.After(12 * time.Second)
+
+			for len(acked) < eventCount {
+				select {
+				case event := <-ec:
+					Expect(event).ToNot(BeNil())
+					id := event.ID()
+					deliveries[id]++
+					totalDeliveries++
+
+					if deliveries[id] == 1 {
+						// First delivery: hold it so auto-ping fires (and
+						// requeues with a new internal id) several times, then
+						// reject to trigger AutoPing.Remove.
+						time.Sleep(90 * time.Millisecond)
+						Expect(event.Reject(ctx)).ToNot(HaveOccurred())
+					} else if !acked[id] {
+						Expect(event.Ack(ctx)).ToNot(HaveOccurred())
+						acked[id] = true
+					} else {
+						// Stray late redelivery of an already-acked event:
+						// ack again so it is not redelivered further.
+						Expect(event.Ack(ctx)).ToNot(HaveOccurred())
+					}
+				case <-deadline:
+					Fail("timed out; acked " +
+						strconv.Itoa(len(acked)) + "/" + strconv.Itoa(eventCount) +
+						" events - auto-ping requeue/cancel path is not draining")
+				}
+			}
+
+			// Every logical event was delivered and acked.
+			Expect(deliveries).To(HaveLen(eventCount))
+			Expect(acked).To(HaveLen(eventCount))
+			for id := range deliveries {
+				Expect(deliveries[id]).To(BeNumerically(">=", 2),
+					"event %d should be delivered at least twice (reject then redeliver)", id)
+			}
+
+			// Redeliveries must stay bounded. The expected total is 2 per
+			// event (reject + redeliver); a leaked-pinger storm would push
+			// this far higher. Allow generous slack for the inherent
+			// one-last-ping race without tolerating runaway redelivery.
+			Expect(totalDeliveries).To(BeNumerically("<=", eventCount*3),
+				"redelivery storm: %d deliveries for %d events suggests leaked auto-pingers", totalDeliveries, eventCount)
+
+			// The whole churn must complete promptly; a starved/leaking run
+			// loop would crawl toward the 12s deadline instead.
+			Expect(time.Since(start)).To(BeNumerically("<", 8*time.Second))
 		})
 
 		It("can manually ping events to extend their processing time", func(ctx context.Context) {

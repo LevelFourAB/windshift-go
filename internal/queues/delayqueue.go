@@ -59,8 +59,12 @@ func NewDelayQueue[T any](ctx context.Context) *DelayQueue[T] {
 	itemsChan := make(chan T)
 
 	res := &DelayQueue[T]{
-		pq:       make(timePriorityQueue[T], 0),
-		wakeChan: make(chan struct{}),
+		pq: make(timePriorityQueue[T], 0),
+		// Buffered with size 1 so the wake signal is coalescing and survives
+		// the gap between run() releasing the lock and reaching its select.
+		// An unbuffered channel would drop the non-blocking send in that
+		// window, losing the wakeup entirely.
+		wakeChan: make(chan struct{}, 1),
 		Items:    itemsChan,
 	}
 	heap.Init(&res.pq)
@@ -167,6 +171,16 @@ func (dq *DelayQueue[T]) run(ctx context.Context, itemsChan chan<- T) {
 			if timer == nil {
 				timer = time.NewTimer(delay)
 			} else {
+				// The timer may have fired while we were awake on a previous
+				// wakeChan signal, leaving a stale value in timer.C. Stop and
+				// drain before Reset so the next select waits the full delay
+				// instead of returning immediately on the stale tick.
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				timer.Reset(delay)
 			}
 

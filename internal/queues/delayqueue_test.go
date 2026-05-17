@@ -3,6 +3,7 @@ package queues_test
 import (
 	"context"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/levelfourab/windshift-go/internal/queues"
@@ -175,17 +176,20 @@ var _ = Describe("DelayQueue", func() {
 	It("should handle concurrent adds and removes safely", func(ctx context.Context) {
 		dq := queues.NewDelayQueue[string](ctx)
 
-		// Start goroutines that add items concurrently
+		// Start goroutines that add items concurrently. Each goroutine writes
+		// only its own slot, and the WaitGroup establishes a happens-before
+		// edge so the removers below can read the ids without a data race.
 		ids := make([]uint, 100)
+		var addWg sync.WaitGroup
+		addWg.Add(100)
 		for i := 0; i < 100; i++ {
 			i := i // capture
 			go func() {
+				defer addWg.Done()
 				ids[i] = dq.Add(strconv.Itoa(i), time.Duration(i)*time.Millisecond)
 			}()
 		}
-
-		// Give time for adds to complete
-		time.Sleep(50 * time.Millisecond)
+		addWg.Wait()
 
 		// Remove some items concurrently
 		for i := 0; i < 50; i++ {
@@ -242,6 +246,86 @@ var _ = Describe("DelayQueue", func() {
 		elapsed := time.Since(start)
 		Expect(item).To(Equal("long"))
 		Expect(elapsed).To(BeNumerically("~", 1*time.Second, 200*time.Millisecond))
+	})
+
+	It("should not lose the wakeup when an item is added right after creation", func(ctx context.Context) {
+		// Targets the lost-wakeup race in the empty-queue window: run() does
+		// lock/len==0/unlock and then selects on wakeChan. An Add that lands
+		// between the unlock and the select must not be lost, otherwise the
+		// item is never delivered. Many iterations with a goroutine racing the
+		// freshly started run() maximize the chance of hitting the window.
+		for i := 0; i < 300; i++ {
+			iterCtx, cancel := context.WithCancel(ctx)
+			dq := queues.NewDelayQueue[string](iterCtx)
+
+			go dq.Add("item", 1*time.Millisecond)
+
+			select {
+			case v := <-dq.Items:
+				Expect(v).To(Equal("item"))
+			case <-time.After(2 * time.Second):
+				cancel()
+				Fail("item was never delivered - wakeup was lost on iteration " + strconv.Itoa(i))
+			}
+
+			cancel()
+		}
+	})
+
+	It("should not lose the wakeup when a new earliest item races the timer window", func(ctx context.Context) {
+		// Targets the lost-wakeup race in the timer window: run() computes a
+		// timer for the current head, unlocks, then selects. An Add of a much
+		// earlier item that lands in that gap must not be lost, otherwise the
+		// earlier item is delivered as late as the original head's delay.
+		for i := 0; i < 300; i++ {
+			iterCtx, cancel := context.WithCancel(ctx)
+			dq := queues.NewDelayQueue[string](iterCtx)
+
+			// Establish a far-away head and let run() park on its timer.
+			dq.Add("late", 10*time.Second)
+			time.Sleep(2 * time.Millisecond)
+
+			// Repeatedly churn the head so run() loops through the
+			// unlock->select window while a goroutine slips in an earlier item.
+			start := time.Now()
+			go dq.Add("early", 20*time.Millisecond)
+			for j := 0; j < 5; j++ {
+				id := dq.Add("churn"+strconv.Itoa(j), 5*time.Second)
+				dq.Remove(id)
+			}
+
+			select {
+			case v := <-dq.Items:
+				Expect(v).To(Equal("early"))
+				Expect(time.Since(start)).To(BeNumerically("<", 1*time.Second),
+					"earliest item delivered late - wakeup was lost on iteration "+strconv.Itoa(i))
+			case <-time.After(2 * time.Second):
+				cancel()
+				Fail("earliest item was never delivered on iteration " + strconv.Itoa(i))
+			}
+
+			cancel()
+		}
+	})
+
+	It("should not spin on a stale timer tick after a wakeup", func(ctx context.Context) {
+		// After the select exits via wakeChan, the old timer may fire and leave
+		// a stale value in timer.C. A correct implementation drains it before
+		// Reset so the next item still waits roughly its full delay rather than
+		// being woken immediately by the stale tick.
+		dq := queues.NewDelayQueue[string](ctx)
+
+		dq.Add("head", 300*time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
+
+		// New earliest item; run() wakes via wakeChan while the head timer is
+		// still pending. The stale head tick (if not drained) must not cause
+		// "earlier" to be delivered before its own 100ms delay elapses.
+		start := time.Now()
+		dq.Add("earlier", 100*time.Millisecond)
+
+		Expect(<-dq.Items).To(Equal("earlier"))
+		Expect(time.Since(start)).To(BeNumerically("~", 100*time.Millisecond, 50*time.Millisecond))
 	})
 
 	It("should handle ID generation correctly even with many items", func(ctx context.Context) {
